@@ -21,6 +21,10 @@ on:
         type: boolean
         required: true
         default: false
+      manifest_url:
+        description: 'Optional OTA manifest URL override (defaults to production ota-manifest)'
+        required: false
+        default: 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json'
 
 permissions:
   contents: write
@@ -66,8 +70,10 @@ jobs:
           VITE_IS_QA: 'false'
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID || vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_UPDATE_PUBLIC_KEY_JWK: ${{ vars.VITE_UPDATE_PUBLIC_KEY_JWK || secrets.VITE_UPDATE_PUBLIC_KEY_JWK }}
-          VITE_UPDATE_MANIFEST_URL: ${{ vars.VITE_UPDATE_MANIFEST_URL || 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json' }}
+          VITE_UPDATE_MANIFEST_URL: ${{ inputs.manifest_url || vars.VITE_UPDATE_MANIFEST_URL || 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json' }}
         run: |
+          echo "Using VITE_UPDATE_MANIFEST_URL=${VITE_UPDATE_MANIFEST_URL}"
+          echo "publish_ota=${{ inputs.publish_ota }}"
           if [ "${{ inputs.build_apk }}" = "true" ]; then
             if [ -z "$VITE_GOOGLE_CLIENT_ID" ] || [[ "$VITE_GOOGLE_CLIENT_ID" == *"-web-client."* ]]; then
               echo "ERROR: Missing or placeholder VITE_GOOGLE_CLIENT_ID. Set your Firebase Web application OAuth Client ID in GitHub Secrets/Variables before building the APK."
@@ -166,9 +172,14 @@ jobs:
 
           APK_OUT="client/android/app/build/outputs/apk/release/app-release.apk"
           mkdir -p apk-artifacts
-          cp "$APK_OUT" "apk-artifacts/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk"
+          APK_ARTIFACT="apk-artifacts/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk"
+          cp "$APK_OUT" "$APK_ARTIFACT"
+          echo "=== APK Metadata (Package ID, Version Code, Version Name) ==="
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK_ARTIFACT" | head -n 5 || true
+          echo "=== Embedded OTA Manifest URL inside APK ==="
+          unzip -p "$APK_ARTIFACT" "assets/public/assets/*.js" | grep -aoE "https://raw\.githubusercontent\.com/[^\"']+/update-manifest\.json" | sort -u || true
           echo "=== Release APK Certificate Fingerprints (Register SHA-1 in Firebase Console) ==="
-          keytool -printcert -jarfile "apk-artifacts/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk" | grep -E "SHA1|SHA256" || true
+          keytool -printcert -jarfile "$APK_ARTIFACT" | grep -E "SHA1|SHA256" || true
 
       - name: Upload Signed Android Release APK
         if: ${{ inputs.build_apk }}

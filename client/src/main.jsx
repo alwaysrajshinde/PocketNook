@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
 import './index.css'
 import App from './App.jsx'
-import { markAppBundleReady } from './services/appUpdateService'
+import { activatePendingUpdateOnColdLaunch, markAppBundleReady } from './services/appUpdateService'
 
 // Service Worker: Enable on Web/PWA ONLY; disable inside Capacitor Android APK
 // so SW cache never conflicts with native OTA bundle updates.
@@ -26,15 +26,26 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
   }
 }
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-
-// Signal CapacitorUpdater that initial JS boot succeeded (enables auto-rollback if future bundle crashes)
-if (typeof window !== 'undefined') {
-  setTimeout(() => {
+function renderPocketNookApp() {
+  // Notify native CapacitorUpdater immediately at startup BEFORE any network requests or async effects run
+  if (Capacitor.isNativePlatform()) {
     markAppBundleReady().catch(() => {});
-  }, 400);
+  }
+
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+if (Capacitor.isNativePlatform()) {
+  // Activate staged OTA updates strictly at cold startup before React/forms mount (local IPC only, no network calls)
+  activatePendingUpdateOnColdLaunch()
+    .catch(() => {})
+    .finally(() => {
+      renderPocketNookApp();
+    });
+} else {
+  renderPocketNookApp();
 }

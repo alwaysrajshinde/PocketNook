@@ -31,8 +31,6 @@ import * as api from './services/api';
 import syncService from './services/syncService';
 import {
   checkForAppUpdates,
-  downloadAndStageAppUpdate,
-  applyStagedBundleNow,
   openNativeApkDownload
 } from './services/appUpdateService';
 import { APP_VERSION, APP_CHANGELOG_SUMMARY, APP_SHORT_DATE, APP_RELEASE_TIME } from './constants/version';
@@ -139,67 +137,24 @@ function MainApp() {
   };
 
   const [nativeUpdateState, setNativeUpdateState] = useState(null);
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
-  const [updateProgress, setUpdateProgress] = useState(0);
 
-  const handleCheckForUpdates = async ({ manual = false } = {}) => {
-    try {
-      setIsCheckingUpdates(true);
-      const result = await checkForAppUpdates({ autoDownload: false });
-      setNativeUpdateState(result);
-      if (manual) {
-        if (result?.status === 'update_available') {
-          showToast(`Update v${result.latestVersion} available! Tap Update Now to install.`, 'info', 5000);
-        } else if (result?.status === 'ready_to_install') {
-          showToast(`Update v${result.stagedVersion} ready! Tap Restart App to apply.`, 'success', 5000);
-        } else if (result?.status === 'native_update_required') {
-          showToast(`PocketNook v${result.latestVersion} requires a new signed APK.`, 'info', 5000);
-        } else if (result?.status === 'up_to_date') {
-          showToast(result.message || 'PocketNook is up to date!', 'success');
-        } else if (result?.status === 'offline') {
-          showToast('Offline — update check skipped.', 'info');
-        } else if (result?.error) {
-          showToast(result.error, 'warning');
-        }
-      }
-      return result;
-    } finally {
-      setIsCheckingUpdates(false);
-    }
-  };
-
-  const handleDownloadAndInstallUpdate = async () => {
-    try {
-      setIsDownloadingUpdate(true);
-      setUpdateProgress(0);
-      const result = await downloadAndStageAppUpdate({
-        onProgress: (pct) => setUpdateProgress(pct)
-      });
-      setNativeUpdateState(result);
-      if (result?.status === 'ready_to_install') {
-        showToast(result.message || 'Update downloaded & verified! Tap Restart to apply.', 'success', 5000);
-      } else if (result?.status === 'web_update_available') {
-        showToast(result.message, 'info', 4000);
-      } else if (result?.error) {
-        showToast(result.error, 'warning', 5000);
-      }
-      return result;
-    } finally {
-      setIsDownloadingUpdate(false);
-    }
-  };
-
-  // Native Capacitor Android status bar, SystemBars style sync, splash hide, and update check
+  // Native Capacitor Android status bar, SystemBars style sync, splash hide, and silent automatic OTA checks
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     SplashScreen.hide().catch(() => {});
-    handleCheckForUpdates({ manual: false }).catch(() => {});
+
+    // Check and download/queue compatible OTA update silently on launch (no prompts or session interruption)
+    checkForAppUpdates({ autoDownload: true, applyImmediately: false, force: true })
+      .then(setNativeUpdateState)
+      .catch(() => {});
 
     let stateSub = null;
     CapacitorApp.addListener('appStateChange', ({ isActive }) => {
       if (isActive && navigator.onLine) {
-        checkForAppUpdates({ autoDownload: false }).then(setNativeUpdateState).catch(() => {});
+        // Throttled by 15-minute cooldown in checkForAppUpdates
+        checkForAppUpdates({ autoDownload: true, applyImmediately: false })
+          .then(setNativeUpdateState)
+          .catch(() => {});
       }
     }).then((h) => { stateSub = h; }).catch(() => {});
 
@@ -819,16 +774,6 @@ function MainApp() {
                   onExportExcel={handleExportExcel}
                   onExportJson={handleExportJson}
                   nativeUpdateState={nativeUpdateState}
-                  isCheckingUpdates={isCheckingUpdates}
-                  isDownloadingUpdate={isDownloadingUpdate}
-                  updateProgress={updateProgress}
-                  onCheckUpdates={() => handleCheckForUpdates({ manual: true })}
-                  onDownloadUpdate={handleDownloadAndInstallUpdate}
-                  onApplyUpdate={async () => {
-                    if (nativeUpdateState?.stagedBundleId) {
-                      await applyStagedBundleNow(nativeUpdateState.stagedBundleId);
-                    }
-                  }}
                   onDownloadNativeApk={() => openNativeApkDownload(nativeUpdateState?.apkUrl)}
                   onRefreshAll={handleRefreshAll}
                   onOpenImport={() => setIsImportModalOpen(true)}
@@ -867,47 +812,25 @@ function MainApp() {
           {/* Real-time Offline / Syncing Progress Indicator (Mobile) */}
           <SyncProgressIndicator syncState={syncState} isDesktop={false} />
 
-          {/* Native Android Update Prompt Banner */}
-          {Capacitor.isNativePlatform() && (
-            nativeUpdateState?.status === 'update_available' ||
-            nativeUpdateState?.status === 'downloading' ||
-            nativeUpdateState?.status === 'ready_to_install' ||
-            nativeUpdateState?.status === 'native_update_required'
-          ) && (
-            <div className="bg-purple-500/10 border-b border-purple-500/20 px-4 py-2 text-xs text-purple-900 dark:text-purple-200 flex items-center justify-between gap-2">
+          {/* Native Android APK Update Banner (Shown ONLY when a new signed APK binary is strictly required) */}
+          {Capacitor.isNativePlatform() && nativeUpdateState?.status === 'native_update_required' && (
+            <div
+              data-testid="native-apk-update-banner"
+              className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2"
+            >
               <div className="flex items-center gap-2 min-w-0">
-                <Download size={14} className="text-[#6C47FF] dark:text-[#C4B5FD] shrink-0" />
+                <Download size={14} className="text-amber-600 dark:text-amber-300 shrink-0" />
                 <span className="truncate font-semibold">
-                  {nativeUpdateState.status === 'ready_to_install'
-                    ? `Update v${nativeUpdateState.stagedVersion} verified & ready`
-                    : nativeUpdateState.status === 'downloading' || isDownloadingUpdate
-                      ? `Downloading update (${updateProgress}%)...`
-                      : nativeUpdateState.status === 'update_available'
-                        ? `Update v${nativeUpdateState.latestVersion} available`
-                        : `New Android APK v${nativeUpdateState.latestVersion} available`}
+                  {`New Android APK v${nativeUpdateState.latestVersion} required`}
                 </span>
               </div>
               <button
                 type="button"
-                disabled={isDownloadingUpdate}
-                onClick={async () => {
-                  if (nativeUpdateState.status === 'ready_to_install' && nativeUpdateState.stagedBundleId) {
-                    await applyStagedBundleNow(nativeUpdateState.stagedBundleId);
-                  } else if (nativeUpdateState.status === 'update_available') {
-                    await handleDownloadAndInstallUpdate();
-                  } else {
-                    await openNativeApkDownload(nativeUpdateState.apkUrl);
-                  }
-                }}
-                className="px-2.5 py-1 rounded-lg bg-[#6C47FF] disabled:opacity-60 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                data-testid="native-apk-banner-download-btn"
+                onClick={() => openNativeApkDownload(nativeUpdateState.apkUrl)}
+                className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] shrink-0 cursor-pointer"
               >
-                {nativeUpdateState.status === 'ready_to_install'
-                  ? 'Restart & Apply'
-                  : nativeUpdateState.status === 'downloading' || isDownloadingUpdate
-                    ? `${updateProgress}%`
-                    : nativeUpdateState.status === 'update_available'
-                      ? 'Update Now'
-                      : 'Download APK'}
+                Download APK
               </button>
             </div>
           )}
@@ -1091,16 +1014,6 @@ function MainApp() {
                   onExportExcel={handleExportExcel}
                   onExportJson={handleExportJson}
                   nativeUpdateState={nativeUpdateState}
-                  isCheckingUpdates={isCheckingUpdates}
-                  isDownloadingUpdate={isDownloadingUpdate}
-                  updateProgress={updateProgress}
-                  onCheckUpdates={() => handleCheckForUpdates({ manual: true })}
-                  onDownloadUpdate={handleDownloadAndInstallUpdate}
-                  onApplyUpdate={async () => {
-                    if (nativeUpdateState?.stagedBundleId) {
-                      await applyStagedBundleNow(nativeUpdateState.stagedBundleId);
-                    }
-                  }}
                   onDownloadNativeApk={() => openNativeApkDownload(nativeUpdateState?.apkUrl)}
                   onRefreshAll={handleRefreshAll}
                   onOpenImport={() => setIsImportModalOpen(true)}

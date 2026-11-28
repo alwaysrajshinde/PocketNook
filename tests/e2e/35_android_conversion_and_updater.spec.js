@@ -15,7 +15,7 @@ test.describe('Area 35 (Android Conversion): Exports, Offline Sync, Account Isol
     for (let i = 0; i < 2; i++) {
       const btn = page.locator('[data-testid="welcome-greeting-overlay"], button:has-text("Let\'s Dive In"), [data-testid="onboarding-tour-close-btn"]').first();
       if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await btn.click({ force: true }).catch(() => {});
+        await btn.click({ force: true }).catch(() => { });
         await page.waitForTimeout(200);
       }
     }
@@ -133,7 +133,7 @@ test.describe('Area 35 (Android Conversion): Exports, Offline Sync, Account Isol
     // Trigger real UI logout ("Log Out" in sidebar or "Log Out of PocketNook" in mobile More Settings)
     let logoutBtn = page.locator('button:has-text("Log Out")').first();
     if (!(await logoutBtn.isVisible({ timeout: 2500 }).catch(() => false))) {
-      await page.locator('nav button:has-text("More")').first().click().catch(() => {});
+      await page.locator('nav button:has-text("More")').first().click().catch(() => { });
       await page.waitForTimeout(250);
       logoutBtn = page.locator('button:has-text("Log Out")').first();
     }
@@ -205,10 +205,19 @@ test.describe('Area 35 (Android Conversion): Exports, Offline Sync, Account Isol
     const focusedTagIncome = await page.evaluate(() => document.activeElement?.tagName || 'BODY');
     expect(['INPUT', 'TEXTAREA']).not.toContain(focusedTagIncome);
 
-    // Tapping an input explicitly focuses it cleanly
+    // Tapping an input explicitly focuses it cleanly and stays uninterrupted across background visibility switches
     const amountField = page.locator('.fixed input[placeholder="0"]').first();
     await amountField.click();
     await expect(amountField).toBeFocused();
+    await amountField.fill('425');
+
+    // Simulate user temporarily switching to PhonePe/WhatsApp and returning -> modal & form value remain intact
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('blur'));
+      window.dispatchEvent(new Event('focus'));
+    });
+    await expect(page.locator('h2:has-text("Add Income")')).toBeVisible();
+    await expect(amountField).toHaveValue('425');
 
     await page.locator('button[aria-label="Close modal"]').first().click();
     await expect(page.locator('h2:has-text("Add Income")')).not.toBeVisible({ timeout: 4000 });
@@ -220,7 +229,7 @@ test.describe('Area 35 (Android Conversion): Exports, Offline Sync, Account Isol
       expect(h).toBeLessThanOrEqual(1);
     }
 
-    // 4. Settings -> App Updates section shows installed/OTA version, Check for Updates, and clean error/status handling
+    // 4. Settings -> App Updates section renders clean read-only version status with NO manual OTA buttons
     const moreBtn = page.locator('nav button:has-text("More"), button:has-text("More Settings")').first();
     if (await moreBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
       await moreBtn.click();
@@ -229,17 +238,11 @@ test.describe('Area 35 (Android Conversion): Exports, Offline Sync, Account Isol
 
     await expect(page.locator('[data-testid="app-updates-panel"]')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('text=v2.4.5').first()).toBeVisible({ timeout: 5000 });
-
-    // Mock 404 manifest fetch cleanly and confirm clear error message surfaces when clicking Check for Updates
-    await page.route('**/update-manifest.json**', async (route) => {
-      await route.fulfill({ status: 404, body: 'Not found' });
-    });
-    const checkUpdatesBtn = page.locator('[data-testid="settings-check-updates-btn"]').first();
-    await expect(checkUpdatesBtn).toBeVisible({ timeout: 4000 });
-    await checkUpdatesBtn.click();
     await expect(page.locator('[data-testid="app-update-status-banner"]')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('[data-testid="app-update-status-banner"]')).toContainText(/HTTP 404|Failed|Manifest check/i);
-    await page.unroute('**/update-manifest.json**');
+    await expect(page.locator('[data-testid="settings-check-updates-btn"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="settings-update-now-btn"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="settings-restart-apply-btn"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="settings-download-apk-btn"]')).toHaveCount(0);
 
     const openInstallBtn = page.locator('[data-testid="mobile-install-pwa-btn"], [data-testid="desktop-install-pwa-btn"]').first();
     await expect(openInstallBtn).toBeVisible({ timeout: 5000 });

@@ -50,12 +50,6 @@ export default function Settings({
   onExportExcel = null,
   onExportJson = null,
   nativeUpdateState = null,
-  isCheckingUpdates = false,
-  isDownloadingUpdate = false,
-  updateProgress = 0,
-  onCheckUpdates = null,
-  onDownloadUpdate = null,
-  onApplyUpdate = null,
   onDownloadNativeApk = null,
   onRefreshAll,
   formatCurrency,
@@ -1520,15 +1514,9 @@ export default function Settings({
                   </button>
                 </div>
 
-                {/* App Updates (Desktop + OTA Status) */}
+                {/* App Updates (Read-Only Automatic Status) */}
                 <AppUpdateCard
                   nativeUpdateState={nativeUpdateState}
-                  isCheckingUpdates={isCheckingUpdates}
-                  isDownloadingUpdate={isDownloadingUpdate}
-                  updateProgress={updateProgress}
-                  onCheckUpdates={onCheckUpdates}
-                  onDownloadUpdate={onDownloadUpdate}
-                  onApplyUpdate={onApplyUpdate}
                   onDownloadNativeApk={onDownloadNativeApk}
                   compact={true}
                 />
@@ -2139,12 +2127,6 @@ export default function Settings({
             </h3>
             <AppUpdateCard
               nativeUpdateState={nativeUpdateState}
-              isCheckingUpdates={isCheckingUpdates}
-              isDownloadingUpdate={isDownloadingUpdate}
-              updateProgress={updateProgress}
-              onCheckUpdates={onCheckUpdates}
-              onDownloadUpdate={onDownloadUpdate}
-              onApplyUpdate={onApplyUpdate}
               onDownloadNativeApk={onDownloadNativeApk}
             />
           </div>
@@ -2856,12 +2838,6 @@ export default function Settings({
         isOpen={isInstallModalOpen}
         onClose={() => setIsInstallModalOpen(false)}
         nativeUpdateState={nativeUpdateState}
-        isCheckingUpdates={isCheckingUpdates}
-        isDownloadingUpdate={isDownloadingUpdate}
-        updateProgress={updateProgress}
-        onCheckUpdates={onCheckUpdates}
-        onDownloadUpdate={onDownloadUpdate}
-        onApplyUpdate={onApplyUpdate}
         onDownloadNativeApk={onDownloadNativeApk}
       />
     </div>

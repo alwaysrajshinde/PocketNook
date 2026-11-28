@@ -14,12 +14,6 @@ export default function InstallModal({
   isOpen,
   onClose,
   nativeUpdateState = null,
-  isCheckingUpdates = false,
-  isDownloadingUpdate = false,
-  updateProgress = 0,
-  onCheckUpdates = null,
-  onDownloadUpdate = null,
-  onApplyUpdate = null,
   onDownloadNativeApk = null
 }) {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -118,12 +112,6 @@ export default function InstallModal({
         {isNativeAndroid ? (
           <AppUpdateCard
             nativeUpdateState={nativeUpdateState}
-            isCheckingUpdates={isCheckingUpdates}
-            isDownloadingUpdate={isDownloadingUpdate}
-            updateProgress={updateProgress}
-            onCheckUpdates={onCheckUpdates}
-            onDownloadUpdate={onDownloadUpdate}
-            onApplyUpdate={onApplyUpdate}
             onDownloadNativeApk={onDownloadNativeApk}
             compact={true}
           />
