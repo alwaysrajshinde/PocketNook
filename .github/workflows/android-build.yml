@@ -121,7 +121,18 @@ jobs:
 
       - name: Setup Android SDK
         if: ${{ inputs.build_apk }}
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+
+      - name: Verify Android SDK & Build Tools
+        if: ${{ inputs.build_apk }}
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
+          command -v sdkmanager
+          sdkmanager --version
 
       - name: Sync Capacitor Android Project
         if: ${{ inputs.build_apk }}
