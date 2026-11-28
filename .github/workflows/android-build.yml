@@ -1,6 +1,9 @@
 name: PocketNook Android Release & OTA Bundle CI
 
 on:
+  push:
+    branches:
+      - ota-test-build
   workflow_dispatch:
     inputs:
       min_native_version_code:
@@ -10,17 +13,17 @@ on:
       release_notes:
         description: 'Short changelog shown in Android Update prompt'
         required: false
-        default: 'Stability, offline sync, and performance improvements.'
+        default: 'Isolated OTA test bundle v2.4.7 (harmless UI label verification).'
       build_apk:
         description: 'Build signed Android Release APK (set false for web-only OTA bundle)'
         type: boolean
         required: true
-        default: true
+        default: false
       publish_ota:
-        description: 'Publish signed OTA zip to GitHub Release & update-manifest.json to ota-manifest branch'
+        description: 'Publish signed OTA zip to ISOLATED test release & ota-manifest-test branch ONLY'
         type: boolean
         required: true
-        default: false
+        default: true
       manifest_url:
         description: 'Isolated test OTA manifest URL (defaults to ota-manifest-test on ota-test-build)'
         required: false
@@ -58,11 +61,23 @@ jobs:
       - name: Read Version Metadata
         id: meta
         run: |
+          if [ "${{ github.ref_name }}" != "ota-test-build" ]; then
+            echo "ERROR: Isolated OTA test workflow must ONLY run on ota-test-build!"
+            exit 1
+          fi
           PKG_VER=$(node -p "require('./client/package.json').version")
           NATIVE_CODE=$(( ${GITHUB_RUN_NUMBER:-1} ))
+          SHOULD_BUILD_APK="${{ inputs.build_apk }}"
+          SHOULD_PUBLISH_TEST="${{ inputs.publish_ota }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            SHOULD_BUILD_APK="false"
+            SHOULD_PUBLISH_TEST="true"
+          fi
           echo "web_version=${PKG_VER}" >> "$GITHUB_OUTPUT"
           echo "native_code=${NATIVE_CODE}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${PKG_VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${PKG_VER}-ota-test" >> "$GITHUB_OUTPUT"
+          echo "should_build_apk=${SHOULD_BUILD_APK}" >> "$GITHUB_OUTPUT"
+          echo "should_publish_test=${SHOULD_PUBLISH_TEST}" >> "$GITHUB_OUTPUT"
 
       - name: Build Production Web Bundle
         working-directory: client
@@ -78,7 +93,7 @@ jobs:
             echo "ERROR: Isolated test build must NOT target production ota-manifest!"
             exit 1
           fi
-          if [ "${{ inputs.build_apk }}" = "true" ]; then
+          if [ "${{ steps.meta.outputs.should_build_apk }}" = "true" ]; then
             if [ -z "$VITE_GOOGLE_CLIENT_ID" ] || [[ "$VITE_GOOGLE_CLIENT_ID" == *"-web-client."* ]]; then
               echo "ERROR: Missing or placeholder VITE_GOOGLE_CLIENT_ID. Set your Firebase Web application OAuth Client ID in GitHub Secrets/Variables before building the APK."
               exit 1
@@ -115,11 +130,11 @@ jobs:
           node scripts/generate-update-manifest.mjs \
             --zip "ota-artifacts/${ZIP_NAME}" \
             --version "${{ steps.meta.outputs.web_version }}" \
-            --minNativeCode "${{ inputs.min_native_version_code }}" \
+            --minNativeCode "${{ inputs.min_native_version_code || '1' }}" \
             --nativeCode "${{ steps.meta.outputs.native_code }}" \
             --bundleUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/${MANIFEST_TAG}/${ZIP_NAME}" \
             --apkUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/${MANIFEST_TAG}/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk" \
-            --notes "${{ inputs.release_notes }}" \
+            --notes "${{ inputs.release_notes || 'Isolated OTA test bundle verification.' }}" \
             --out "ota-artifacts/update-manifest.json"
           node --input-type=module -e '
             import fs from "node:fs";
@@ -142,21 +157,21 @@ jobs:
           retention-days: 30
 
       - name: Setup JDK 21 (Capacitor v8 Requirement)
-        if: ${{ inputs.build_apk }}
+        if: ${{ steps.meta.outputs.should_build_apk == 'true' }}
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Android SDK
-        if: ${{ inputs.build_apk }}
+        if: ${{ steps.meta.outputs.should_build_apk == 'true' }}
         uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: '14742923'
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
 
       - name: Verify Android SDK & Build Tools
-        if: ${{ inputs.build_apk }}
+        if: ${{ steps.meta.outputs.should_build_apk == 'true' }}
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME}"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
@@ -164,12 +179,12 @@ jobs:
           sdkmanager --version
 
       - name: Sync Capacitor Android Project
-        if: ${{ inputs.build_apk }}
+        if: ${{ steps.meta.outputs.should_build_apk == 'true' }}
         working-directory: client
         run: npx cap sync android
 
       - name: Build Signed Release APK
-        if: ${{ inputs.build_apk }}
+        if: ${{ steps.meta.outputs.should_build_apk == 'true' }}
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           POCKETNOOK_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -209,44 +224,61 @@ jobs:
           keytool -printcert -jarfile "$APK_ARTIFACT" | grep -E "SHA1|SHA256" || true
 
       - name: Upload Signed Android Release APK
-        if: ${{ inputs.build_apk }}
+        if: ${{ steps.meta.outputs.should_build_apk == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: pocketnook-android-apk-v${{ steps.meta.outputs.web_version }}
           path: apk-artifacts/
           retention-days: 30
 
-      - name: Publish Approved OTA Release & Signed Manifest
-        if: ${{ inputs.publish_ota }}
+      - name: Publish Isolated Test OTA Pre-Release & Signed ota-manifest-test
+        if: ${{ steps.meta.outputs.should_publish_test == 'true' && github.ref_name == 'ota-test-build' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.meta.outputs.web_version }}"
-          ZIP_PATH="ota-artifacts/pocketnook-web-${TAG}.zip"
-          ASSETS=("$ZIP_PATH" "ota-artifacts/update-manifest.json")
-          if [ "${{ inputs.build_apk }}" = "true" ] && [ -f "apk-artifacts/PocketNook-${TAG}-release.apk" ]; then
-            ASSETS+=("apk-artifacts/PocketNook-${TAG}-release.apk")
+          TAG="${{ steps.meta.outputs.tag }}"
+          if [[ "$TAG" != *"-ota-test" ]]; then
+            echo "ERROR: Refusing to publish non-test tag: $TAG"
+            exit 1
           fi
+          ZIP_PATH="ota-artifacts/pocketnook-web-v${{ steps.meta.outputs.web_version }}.zip"
+          MANIFEST_PATH="ota-artifacts/update-manifest.json"
+          ASSETS=("$ZIP_PATH" "$MANIFEST_PATH")
+
+          # Create or update isolated GitHub Pre-Release ONLY
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
             gh release create "$TAG" "${ASSETS[@]}" \
-              --title "PocketNook ${TAG}" \
-              --notes "${{ inputs.release_notes }}" \
+              --prerelease \
+              --title "PocketNook ${TAG} (Isolated Test OTA)" \
+              --notes "${{ inputs.release_notes || 'Isolated test channel OTA bundle verification.' }}" \
               --target "${{ github.sha }}"
           fi
 
-          # Publish signed update-manifest.json to dedicated ota-manifest branch (HTTPS + CORS *, zero conflict with main/deploy.yml)
+          # Verify uploaded GitHub Release asset returns HTTP 200 and matches exact manifest SHA-256 BEFORE publishing manifest
+          EXPECTED_SHA=$(node -p "JSON.parse(require('fs').readFileSync('${MANIFEST_PATH}', 'utf8')).sha256")
+          BUNDLE_URL=$(node -p "JSON.parse(require('fs').readFileSync('${MANIFEST_PATH}', 'utf8')).bundleUrl")
+          curl -fsSL "$BUNDLE_URL" -o "${RUNNER_TEMP}/downloaded-ota.zip"
+          ACTUAL_SHA=$(sha256sum "${RUNNER_TEMP}/downloaded-ota.zip" | awk '{print tolower($1)}')
+          rm -f "${RUNNER_TEMP}/downloaded-ota.zip"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "ERROR: Uploaded test asset SHA-256 mismatch ($ACTUAL_SHA vs $EXPECTED_SHA)!"
+            exit 1
+          fi
+          echo "Verified HTTP 200 + SHA-256 match for $BUNDLE_URL ($ACTUAL_SHA)"
+
+          # Push signed update-manifest.json ONLY to ota-manifest-test branch (NEVER production ota-manifest)
           TMP_OTA=$(mktemp -d)
-          cp "ota-artifacts/update-manifest.json" "${TMP_OTA}/update-manifest.json"
+          cp "$MANIFEST_PATH" "${TMP_OTA}/update-manifest.json"
           (
             cd "$TMP_OTA"
-            git init -b ota-manifest
+            git init -b ota-manifest-test
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add update-manifest.json
-            git commit -m "ota: publish signed update-manifest ${TAG}"
+            git commit -m "ota-test: publish signed update-manifest ${TAG}"
             git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-            git push --force origin ota-manifest
+            git push --force origin ota-manifest-test
           )
           rm -rf "$TMP_OTA"

@@ -64,7 +64,7 @@ export default function AppUpdateCard({
               App Version &amp; Updates
             </h4>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-              Automatic signed delivery (ECDSA P-256 + SHA-256)
+              Automatic signed delivery · <span data-testid="ota-test-label">OTA Test Channel (v{webVer})</span>
             </p>
           </div>
         </div>

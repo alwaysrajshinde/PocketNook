@@ -3,12 +3,12 @@
  * Automatically updated on every build, commit, and push
  */
 
-export const APP_VERSION = 'v2.4.6';
+export const APP_VERSION = 'v2.4.7';
 export const APP_RELEASE_DATE = 'November 28, 2026';
-export const APP_RELEASE_TIME = '11:02 PM';
+export const APP_RELEASE_TIME = '11:45 PM';
 export const APP_SHORT_DATE = '28 Nov 2026';
-export const APP_INKED_DATETIME = '28 Nov 2026, 11:02 PM';
-export const APP_BUILD_TIMESTAMP = '2026-11-28T17:32:46.561Z';
+export const APP_INKED_DATETIME = '28 Nov 2026, 11:45 PM';
+export const APP_BUILD_TIMESTAMP = '2026-11-28T18:15:08.245Z';
 
 // Inked version string combining version number and exact release date & time
 export const APP_INKED_VERSION = `${APP_VERSION} · Updated ${APP_SHORT_DATE} at ${APP_RELEASE_TIME}`;
