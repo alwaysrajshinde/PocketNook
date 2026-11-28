@@ -1,0 +1,163 @@
+name: PocketNook Android Release & OTA Bundle CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_native_version_code:
+        description: 'Minimum Android versionCode compatible with this web OTA bundle'
+        required: true
+        default: '1'
+      release_notes:
+        description: 'Short changelog shown in Android Update prompt'
+        required: false
+        default: 'Stability, offline sync, and performance improvements.'
+      build_apk:
+        description: 'Build signed Android Release APK (set false for web-only OTA bundle)'
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build_android_and_ota:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository (PROD only)
+        uses: actions/checkout@v4
+
+      - name: Verify Zero Experimental QA/AI Code
+        run: |
+          if grep -rnE "WhatsAppChatboxModal|aiAssistantService|cloudflar|chatContextService" client/src/; then
+            echo "ERROR: Experimental QA/AI code detected in PROD Android build!"
+            exit 1
+          fi
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'client/package-lock.json'
+
+      - name: Install Client Dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Read Version Metadata
+        id: meta
+        run: |
+          PKG_VER=$(node -p "require('./client/package.json').version")
+          NATIVE_CODE=$(( ${GITHUB_RUN_NUMBER:-1} ))
+          echo "web_version=${PKG_VER}" >> "$GITHUB_OUTPUT"
+          echo "native_code=${NATIVE_CODE}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${PKG_VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Production Web Bundle
+        working-directory: client
+        env:
+          VITE_IS_QA: 'false'
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID || vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_UPDATE_PUBLIC_KEY_JWK: ${{ vars.VITE_UPDATE_PUBLIC_KEY_JWK || secrets.VITE_UPDATE_PUBLIC_KEY_JWK }}
+          VITE_UPDATE_MANIFEST_URL: ${{ vars.VITE_UPDATE_MANIFEST_URL || 'https://alwaysrajshinde.github.io/PocketNook/update-manifest.json' }}
+        run: |
+          if [ "${{ inputs.build_apk }}" = "true" ]; then
+            if [ -z "$VITE_GOOGLE_CLIENT_ID" ] || [[ "$VITE_GOOGLE_CLIENT_ID" == *"-web-client."* ]]; then
+              echo "ERROR: Missing or placeholder VITE_GOOGLE_CLIENT_ID. Set your Firebase Web application OAuth Client ID in GitHub Secrets/Variables before building the APK."
+              exit 1
+            fi
+          fi
+          npm run build
+
+      - name: Package & Sign Live Web OTA Bundle
+        env:
+          UPDATE_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PEM }}
+          VITE_UPDATE_PUBLIC_KEY_JWK: ${{ vars.VITE_UPDATE_PUBLIC_KEY_JWK || secrets.VITE_UPDATE_PUBLIC_KEY_JWK }}
+        run: |
+          if [ -z "$UPDATE_SIGNING_PRIVATE_KEY_PEM" ]; then
+            echo "ERROR: Missing UPDATE_SIGNING_PRIVATE_KEY_PEM secret (never ship unsigned OTA manifests)."
+            exit 1
+          fi
+          mkdir -p ota-artifacts
+          ZIP_NAME="pocketnook-web-v${{ steps.meta.outputs.web_version }}.zip"
+          (cd client/dist && zip -r "../../ota-artifacts/${ZIP_NAME}" .)
+          node scripts/generate-update-manifest.mjs \
+            --zip "ota-artifacts/${ZIP_NAME}" \
+            --version "${{ steps.meta.outputs.web_version }}" \
+            --minNativeCode "${{ inputs.min_native_version_code }}" \
+            --nativeCode "${{ steps.meta.outputs.native_code }}" \
+            --bundleUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/v${{ steps.meta.outputs.web_version }}/${ZIP_NAME}" \
+            --apkUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/v${{ steps.meta.outputs.web_version }}/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk" \
+            --notes "${{ inputs.release_notes }}" \
+            --out "ota-artifacts/update-manifest.json"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import { buildCanonicalManifestPayload, verifyManifestSignature } from "./client/src/services/appUpdateService.js";
+            const manifest = JSON.parse(fs.readFileSync("ota-artifacts/update-manifest.json", "utf8"));
+            const jwk = process.env.VITE_UPDATE_PUBLIC_KEY_JWK ? JSON.parse(process.env.VITE_UPDATE_PUBLIC_KEY_JWK) : undefined;
+            const res = await verifyManifestSignature(manifest, jwk);
+            if (!res.valid) {
+              console.error("CRITICAL CI ERROR: OTA manifest signature does NOT match embedded/configured public key:", res.reason);
+              process.exit(1);
+            }
+            console.log("Verified OTA manifest cryptographic signature against app public key:", res.mode, "| payload:", buildCanonicalManifestPayload(manifest));
+          '
+
+      - name: Upload Web OTA Bundle & Signed Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketnook-web-ota-v${{ steps.meta.outputs.web_version }}
+          path: ota-artifacts/
+          retention-days: 30
+
+      - name: Setup JDK 21 (Capacitor v8 Requirement)
+        if: ${{ inputs.build_apk }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        if: ${{ inputs.build_apk }}
+        uses: android-actions/setup-android@v3
+
+      - name: Sync Capacitor Android Project
+        if: ${{ inputs.build_apk }}
+        working-directory: client
+        run: npx cap sync android
+
+      - name: Build Signed Release APK
+        if: ${{ inputs.build_apk }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          POCKETNOOK_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          POCKETNOOK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          POCKETNOOK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          POCKETNOOK_VERSION_CODE: ${{ steps.meta.outputs.native_code }}
+          POCKETNOOK_VERSION_NAME: ${{ steps.meta.outputs.web_version }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$POCKETNOOK_KEYSTORE_PASSWORD" ] || [ -z "$POCKETNOOK_KEY_ALIAS" ] || [ -z "$POCKETNOOK_KEY_PASSWORD" ]; then
+            echo "ERROR: Missing Android signing secrets (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD)."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "${RUNNER_TEMP}/pocketnook-release.jks"
+          export POCKETNOOK_KEYSTORE_PATH="${RUNNER_TEMP}/pocketnook-release.jks"
+          chmod +x client/android/gradlew
+          (cd client/android && ./gradlew assembleRelease --no-daemon)
+          rm -f "${RUNNER_TEMP}/pocketnook-release.jks"
+
+          APK_OUT="client/android/app/build/outputs/apk/release/app-release.apk"
+          mkdir -p apk-artifacts
+          cp "$APK_OUT" "apk-artifacts/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk"
+          echo "=== Release APK Certificate Fingerprints (Register SHA-1 in Firebase Console) ==="
+          keytool -printcert -jarfile "apk-artifacts/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk" | grep -E "SHA1|SHA256" || true
+
+      - name: Upload Signed Android Release APK
+        if: ${{ inputs.build_apk }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketnook-android-apk-v${{ steps.meta.outputs.web_version }}
+          path: apk-artifacts/
+          retention-days: 30
