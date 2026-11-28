@@ -315,7 +315,7 @@ export default function CategoryManagerModal({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none" style={{ touchAction: 'none' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 modal-safe-overlay bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none" style={{ touchAction: 'none' }}>
       <div className="fixed inset-0" onClick={onClose} />
 
       <div className="relative w-full max-w-2xl bg-white dark:bg-[#18132F] rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-white/10 shadow-2xl z-10 max-h-[90vh] flex flex-col overflow-hidden animate-scale-in" style={{ overscrollBehavior: 'contain' }}>

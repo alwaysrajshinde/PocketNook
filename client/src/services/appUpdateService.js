@@ -4,8 +4,8 @@
  *
  * Uses @capgo/capacitor-updater in self-hosted manual mode:
  * - Zero paid cloud dependencies (autoUpdate: false, statsUrl: "")
- * - Manifest hosted on GitHub Pages HTTPS (configurable via VITE_UPDATE_MANIFEST_URL)
- * - Compatible web-layer ZIP bundles hosted on GitHub Releases
+ * - Manifest hosted over permanent public HTTPS with CORS (raw.githubusercontent.com ota-manifest branch / GitHub Pages)
+ * - Compatible web-layer ZIP bundles hosted permanently on GitHub Releases
  * - Verifies: HTTPS trusted origin -> ECDSA P-256 signature -> minNativeVersionCode -> SHA-256 ZIP integrity
  * - Auto-rollback if notifyAppReady() fails after switching bundle
  */
@@ -16,7 +16,7 @@ import { Browser } from '@capacitor/browser';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { APP_VERSION } from '../constants/version.js';
 
-export const DEFAULT_MANIFEST_URL = 'https://alwaysrajshinde.github.io/PocketNook/update-manifest.json';
+export const DEFAULT_MANIFEST_URL = 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json';
 
 // Embedded ECDSA P-256 PUBLIC key (safe to ship inside Android binary & web bundle; NEVER contains private key).
 // Can be rotated/overridden at CI build time via GitHub Variable `VITE_UPDATE_PUBLIC_KEY_JWK`.
@@ -37,7 +37,8 @@ export const EMBEDDED_PUBLIC_KEY_JWK = (() => {
 })();
 
 export const TRUSTED_UPDATE_ORIGINS = [
-  'https://alwaysrajshinde.github.io/',
+  'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/',
+  'https://alwaysrajshinde.github.io/PocketNook/',
   'https://github.com/alwaysrajshinde/PocketNook/',
   'https://objects.githubusercontent.com/',
   'https://release-assets.githubusercontent.com/'
@@ -96,6 +97,7 @@ function base64ToUint8Array(b64) {
 
 /**
  * Verifies ECDSA P-256 signature over the canonical manifest payload using WebCrypto.
+ * Fails closed whenever the public key or signature is missing or invalid.
  */
 export async function verifyManifestSignature(manifest, publicKeyJwk = EMBEDDED_PUBLIC_KEY_JWK) {
   if (!publicKeyJwk || publicKeyJwk.kty !== 'EC' || !publicKeyJwk.x || !publicKeyJwk.y) {
@@ -217,12 +219,38 @@ export async function getInstalledVersionInfo() {
 }
 
 /**
- * Fetches, verifies, and stages a compatible OTA web update (or reports native APK requirement).
+ * Validates manifest structure, trusted HTTPS URLs, ECDSA signature, and native version gate.
+ */
+export async function validateManifestSecurity(manifest, {
+  allowUntrustedTestOrigins = [],
+  publicKeyJwk = EMBEDDED_PUBLIC_KEY_JWK
+} = {}) {
+  if (!manifest || !manifest.webVersion || !manifest.sha256 || !manifest.bundleUrl) {
+    throw new Error('Malformed update manifest.');
+  }
+  if (!/^[a-f0-9]{64}$/i.test(String(manifest.sha256))) {
+    throw new Error('Invalid SHA-256 digest in update manifest.');
+  }
+  if (!isTrustedHttpsUrl(manifest.bundleUrl, allowUntrustedTestOrigins)) {
+    throw new Error('Bundle download URL is not on a trusted HTTPS origin.');
+  }
+  const sigCheck = await verifyManifestSignature(manifest, publicKeyJwk);
+  if (!sigCheck.valid) {
+    throw new Error(sigCheck.reason || 'Update signature rejected.');
+  }
+  return sigCheck;
+}
+
+/**
+ * Fetches and verifies the latest update manifest.
+ * By default (`autoDownload: false`), reports availability cleanly so the user can tap "Update Now".
  */
 export async function checkForAppUpdates({
   manifestUrl = import.meta.env?.VITE_UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL,
   allowUntrustedTestOrigins = [],
+  autoDownload = false,
   applyImmediately = false,
+  onProgress = null,
   publicKeyJwk = EMBEDDED_PUBLIC_KEY_JWK
 } = {}) {
   const checkedAt = new Date().toISOString();
@@ -253,20 +281,7 @@ export async function checkForAppUpdates({
     }
 
     const manifest = await res.json();
-    if (!manifest || !manifest.webVersion || !manifest.sha256 || !manifest.bundleUrl) {
-      throw new Error('Malformed update manifest.');
-    }
-    if (!/^[a-f0-9]{64}$/i.test(String(manifest.sha256))) {
-      throw new Error('Invalid SHA-256 digest in update manifest.');
-    }
-    if (!isTrustedHttpsUrl(manifest.bundleUrl, allowUntrustedTestOrigins)) {
-      throw new Error('Bundle download URL is not on a trusted HTTPS origin.');
-    }
-
-    const sigCheck = await verifyManifestSignature(manifest, publicKeyJwk);
-    if (!sigCheck.valid) {
-      throw new Error(sigCheck.reason || 'Update signature rejected.');
-    }
+    await validateManifestSecurity(manifest, { allowUntrustedTestOrigins, publicKeyJwk });
 
     // Check native binary compatibility first (new permissions/plugins require new signed APK)
     const minNative = Number(manifest.minNativeVersionCode || 1);
@@ -275,6 +290,7 @@ export async function checkForAppUpdates({
         status: 'native_update_required',
         checkedAt,
         currentWebVersion: installed.webVersion,
+        nativeVersionName: installed.nativeVersionName,
         currentNativeCode: installed.nativeVersionCode,
         latestVersion: normalizeSemver(manifest.webVersion),
         minNativeVersionCode: minNative,
@@ -282,7 +298,7 @@ export async function checkForAppUpdates({
           ? manifest.apkUrl
           : 'https://github.com/alwaysrajshinde/PocketNook/releases/latest',
         releaseNotes: String(manifest.releaseNotes || 'This release updates Android native capabilities and requires installing the latest signed APK.'),
-        message: `PocketNook v${normalizeSemver(manifest.webVersion)} requires the new Android APK.`
+        message: `PocketNook v${normalizeSemver(manifest.webVersion)} requires a new signed Android APK.`
       });
     }
 
@@ -292,37 +308,133 @@ export async function checkForAppUpdates({
         status: 'up_to_date',
         checkedAt,
         currentWebVersion: installed.webVersion,
+        nativeVersionName: installed.nativeVersionName,
         currentNativeCode: installed.nativeVersionCode,
+        activeBundleId: installed.activeBundleId,
         latestVersion: normalizeSemver(manifest.webVersion),
+        pendingManifest: null,
         message: `PocketNook v${installed.webVersion} is up to date.`
       });
     }
 
-    // On web browser (non-Capacitor), only report availability without invoking native CapacitorUpdater
+    // Keep staged state if the user already downloaded this exact version
+    const prev = readPersistedUpdateState();
+    if (
+      prev?.status === 'ready_to_install' &&
+      prev?.stagedVersion === normalizeSemver(manifest.webVersion) &&
+      prev?.stagedBundleId
+    ) {
+      return prev;
+    }
+
+    if (!autoDownload) {
+      return writePersistedUpdateState({
+        status: 'update_available',
+        checkedAt,
+        currentWebVersion: installed.webVersion,
+        nativeVersionName: installed.nativeVersionName,
+        currentNativeCode: installed.nativeVersionCode,
+        activeBundleId: installed.activeBundleId,
+        latestVersion: normalizeSemver(manifest.webVersion),
+        sizeBytes: Number(manifest.sizeBytes || 0),
+        releaseNotes: String(manifest.releaseNotes || 'UI improvements, bug fixes, and stability updates.'),
+        pendingManifest: manifest,
+        message: `Update v${normalizeSemver(manifest.webVersion)} is available!`
+      });
+    }
+
+    return await downloadAndStageAppUpdate({
+      manifest,
+      allowUntrustedTestOrigins,
+      applyImmediately,
+      onProgress,
+      publicKeyJwk
+    });
+  } catch (err) {
+    return writePersistedUpdateState({
+      status: 'error',
+      checkedAt,
+      error: err?.message || 'Failed to check for updates.',
+      message: err?.message || 'Failed to check for updates.'
+    });
+  }
+}
+
+/**
+ * Downloads, verifies SHA-256 natively, and stages a verified OTA bundle with live progress callbacks.
+ */
+export async function downloadAndStageAppUpdate({
+  manifest = null,
+  allowUntrustedTestOrigins = [],
+  applyImmediately = false,
+  onProgress = null,
+  publicKeyJwk = EMBEDDED_PUBLIC_KEY_JWK
+} = {}) {
+  const checkedAt = new Date().toISOString();
+  const targetManifest = manifest || readPersistedUpdateState()?.pendingManifest;
+  if (!targetManifest) {
+    return writePersistedUpdateState({
+      status: 'error',
+      checkedAt,
+      error: 'No verified update manifest available to download.',
+      message: 'Please tap Check for Updates first.'
+    });
+  }
+
+  let downloadSub = null;
+  try {
+    const installed = await getInstalledVersionInfo();
+    await validateManifestSecurity(targetManifest, { allowUntrustedTestOrigins, publicKeyJwk });
+
+    const minNative = Number(targetManifest.minNativeVersionCode || 1);
+    if (installed.nativeVersionCode < minNative) {
+      return writePersistedUpdateState({
+        status: 'native_update_required',
+        checkedAt,
+        currentWebVersion: installed.webVersion,
+        currentNativeCode: installed.nativeVersionCode,
+        latestVersion: normalizeSemver(targetManifest.webVersion),
+        minNativeVersionCode: minNative,
+        apkUrl: isTrustedHttpsUrl(targetManifest.apkUrl, allowUntrustedTestOrigins)
+          ? targetManifest.apkUrl
+          : 'https://github.com/alwaysrajshinde/PocketNook/releases/latest',
+        releaseNotes: String(targetManifest.releaseNotes || ''),
+        message: `PocketNook v${normalizeSemver(targetManifest.webVersion)} requires a new signed Android APK.`
+      });
+    }
+
     if (!installed.isNative) {
       return writePersistedUpdateState({
         status: 'web_update_available',
         checkedAt,
         currentWebVersion: installed.webVersion,
-        latestVersion: normalizeSemver(manifest.webVersion),
-        releaseNotes: String(manifest.releaseNotes || ''),
-        message: `v${normalizeSemver(manifest.webVersion)} is live on web (refresh to load).`
+        latestVersion: normalizeSemver(targetManifest.webVersion),
+        releaseNotes: String(targetManifest.releaseNotes || ''),
+        message: `v${normalizeSemver(targetManifest.webVersion)} is live for Android OTA (browser runs standard web build).`
       });
     }
 
-    // Native Android: download via CapacitorUpdater with native 64-char SHA-256 verification
     writePersistedUpdateState({
       status: 'downloading',
       checkedAt,
-      latestVersion: normalizeSemver(manifest.webVersion),
-      message: `Downloading update v${normalizeSemver(manifest.webVersion)}...`
+      latestVersion: normalizeSemver(targetManifest.webVersion),
+      progress: 0,
+      message: `Downloading update v${normalizeSemver(targetManifest.webVersion)}...`
     });
+    if (onProgress) onProgress(0);
+
+    downloadSub = await CapacitorUpdater.addListener('download', (evt) => {
+      const pct = Math.max(0, Math.min(100, Math.round(Number(evt?.percent || 0))));
+      if (onProgress) onProgress(pct);
+    }).catch(() => null);
 
     const bundle = await CapacitorUpdater.download({
-      url: manifest.bundleUrl,
-      version: normalizeSemver(manifest.webVersion),
-      checksum: String(manifest.sha256).toLowerCase()
+      url: targetManifest.bundleUrl,
+      version: normalizeSemver(targetManifest.webVersion),
+      checksum: String(targetManifest.sha256).toLowerCase()
     });
+
+    if (onProgress) onProgress(100);
 
     if (applyImmediately) {
       await CapacitorUpdater.set({ id: bundle.id });
@@ -331,28 +443,37 @@ export async function checkForAppUpdates({
         checkedAt,
         stagedBundleId: bundle.id,
         stagedVersion: bundle.version,
-        releaseNotes: String(manifest.releaseNotes || ''),
-        message: `Update v${bundle.version} applied cleanly.`
+        progress: 100,
+        pendingManifest: null,
+        releaseNotes: String(targetManifest.releaseNotes || ''),
+        message: `Update v${bundle.version} installed cleanly!`
       });
     }
 
-    // Stage safely for next launch / background resume so user never loses active form state
     await CapacitorUpdater.next({ id: bundle.id });
     return writePersistedUpdateState({
       status: 'ready_to_install',
       checkedAt,
       currentWebVersion: installed.webVersion,
       stagedBundleId: bundle.id,
-      stagedVersion: normalizeSemver(manifest.webVersion),
-      releaseNotes: String(manifest.releaseNotes || 'Compatible update downloaded and verified.'),
-      message: `Update v${normalizeSemver(manifest.webVersion)} downloaded & verified. Tap Restart to apply now, or it applies on next launch.`
+      stagedVersion: normalizeSemver(targetManifest.webVersion),
+      progress: 100,
+      pendingManifest: null,
+      releaseNotes: String(targetManifest.releaseNotes || 'Compatible update downloaded and verified.'),
+      message: `Update v${normalizeSemver(targetManifest.webVersion)} downloaded & verified! Tap Restart to apply.`
     });
   } catch (err) {
     return writePersistedUpdateState({
       status: 'error',
       checkedAt,
-      error: err?.message || 'Failed to check or download update.'
+      progress: 0,
+      error: err?.message || 'Update download or verification failed.',
+      message: err?.message || 'Update download or verification failed.'
     });
+  } finally {
+    try {
+      await downloadSub?.remove?.();
+    } catch {}
   }
 }
 

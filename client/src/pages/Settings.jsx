@@ -15,6 +15,7 @@ import CategoryManagerModal from '../components/CategoryManagerModal';
 import FontSizeSettingsControl from '../components/FontSizeSettingsControl';
 import ComingSoonPreviewModal from '../components/common/ComingSoonPreviewModal';
 import InstallModal from '../components/InstallModal';
+import AppUpdateCard from '../components/AppUpdateCard';
 import { useTheme } from '../context/ThemeContext';
 import { useFontSize } from '../context/FontSizeContext';
 import { useAuth } from '../context/AuthContext';
@@ -50,7 +51,10 @@ export default function Settings({
   onExportJson = null,
   nativeUpdateState = null,
   isCheckingUpdates = false,
+  isDownloadingUpdate = false,
+  updateProgress = 0,
   onCheckUpdates = null,
+  onDownloadUpdate = null,
   onApplyUpdate = null,
   onDownloadNativeApk = null,
   onRefreshAll,
@@ -1515,6 +1519,19 @@ export default function Settings({
                     <span>Install App Guide (iOS &amp; Desktop)</span>
                   </button>
                 </div>
+
+                {/* App Updates (Desktop + OTA Status) */}
+                <AppUpdateCard
+                  nativeUpdateState={nativeUpdateState}
+                  isCheckingUpdates={isCheckingUpdates}
+                  isDownloadingUpdate={isDownloadingUpdate}
+                  updateProgress={updateProgress}
+                  onCheckUpdates={onCheckUpdates}
+                  onDownloadUpdate={onDownloadUpdate}
+                  onApplyUpdate={onApplyUpdate}
+                  onDownloadNativeApk={onDownloadNativeApk}
+                  compact={true}
+                />
               </div>
 
               {/* CARD 6: ACCOUNT SIGN OUT ACTION */}
@@ -2113,6 +2130,23 @@ export default function Settings({
                 <ChevronRight size={18} className="text-slate-400 dark:text-slate-500 group-hover:translate-x-0.5 transition-transform" />
               </button>
             </div>
+          </div>
+
+          {/* Dedicated App Updates Section (Mobile) */}
+          <div className="pt-1">
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#A78BFA]/70 px-1 mb-2">
+              App Updates
+            </h3>
+            <AppUpdateCard
+              nativeUpdateState={nativeUpdateState}
+              isCheckingUpdates={isCheckingUpdates}
+              isDownloadingUpdate={isDownloadingUpdate}
+              updateProgress={updateProgress}
+              onCheckUpdates={onCheckUpdates}
+              onDownloadUpdate={onDownloadUpdate}
+              onApplyUpdate={onApplyUpdate}
+              onDownloadNativeApk={onDownloadNativeApk}
+            />
           </div>
 
           {/* 7. Bottom Log Out Button */}
@@ -2823,7 +2857,10 @@ export default function Settings({
         onClose={() => setIsInstallModalOpen(false)}
         nativeUpdateState={nativeUpdateState}
         isCheckingUpdates={isCheckingUpdates}
+        isDownloadingUpdate={isDownloadingUpdate}
+        updateProgress={updateProgress}
         onCheckUpdates={onCheckUpdates}
+        onDownloadUpdate={onDownloadUpdate}
         onApplyUpdate={onApplyUpdate}
         onDownloadNativeApk={onDownloadNativeApk}
       />

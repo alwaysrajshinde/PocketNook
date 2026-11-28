@@ -7,7 +7,7 @@ export default function AndroidFrame({ children, isDesktopScreen = false }) {
   // If on actual mobile screen, render full width without mockup bezel
   if (!isDesktopScreen) {
     return (
-      <div className="w-full max-w-lg mx-auto min-h-screen bg-[var(--bg-app)] flex flex-col relative transition-colors">
+      <div className="w-full max-w-lg mx-auto min-h-dvh bg-[var(--bg-app)] flex flex-col relative transition-colors pt-safe pb-safe">
         {children}
       </div>
     );

@@ -98,7 +98,7 @@ export default function ReceiptScannerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 modal-safe-overlay bg-black/70 backdrop-blur-sm animate-fade-in"
       data-testid="receipt-scanner-modal"
     >
       <div className="relative w-full max-w-3xl bg-white dark:bg-[#16132A] rounded-3xl border border-slate-200/80 dark:border-purple-500/20 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">

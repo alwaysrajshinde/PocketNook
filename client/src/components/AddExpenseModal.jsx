@@ -117,13 +117,22 @@ export default function AddExpenseModal({
     }
   };
 
+  const handleInputFocus = (e) => {
+    const el = e?.currentTarget;
+    if (el && typeof el.scrollIntoView === 'function') {
+      setTimeout(() => {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }, 120);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/65 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-0 sm:px-4 pt-[max(0.75rem,var(--pn-safe-top))] pb-0 sm:pb-[max(1rem,var(--pn-safe-bottom))] bg-slate-900/65 backdrop-blur-sm animate-fade-in">
       {/* Backdrop */}
       <div className="fixed inset-0" onClick={onClose} />
 
       {/* Modal Card / Bottom Sheet */}
-      <div className="relative w-full max-w-lg bg-white dark:bg-[#16132A] rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 max-h-[95vh] flex flex-col overflow-hidden border border-slate-100 dark:border-white/10 animate-slide-up transition-colors">
+      <div className="relative w-full max-w-lg bg-white dark:bg-[#16132A] rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 max-h-[calc(100dvh-var(--pn-safe-top)-0.75rem)] sm:max-h-[90dvh] flex flex-col overflow-hidden border border-slate-100 dark:border-white/10 animate-slide-up transition-colors">
         
         {/* Mobile drag handle */}
         <div className="w-12 h-1.5 bg-slate-200 dark:bg-white/15 rounded-full mx-auto mt-2.5 sm:hidden" />
@@ -213,10 +222,10 @@ export default function AddExpenseModal({
                 step="any"
                 min="0.01"
                 required
-                autoFocus
                 placeholder="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
+                onFocus={handleInputFocus}
                 className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-[#1D1936] border border-slate-200 dark:border-white/15 rounded-xl text-lg font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6C47FF] transition-all shadow-xs"
               />
             </div>
@@ -394,13 +403,14 @@ export default function AddExpenseModal({
                 placeholder={t('notesPlaceholder', 'e.g. Grocery, Coffee, Metro recharge...')}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                onFocus={handleInputFocus}
                 className="w-full px-3 py-1 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#6C47FF]"
               />
             </div>
           </div>
 
           {/* Action Buttons: Instant 1-click submit directly on screen without scrolling */}
-          <div className="pt-1.5 flex items-center gap-2 pb-0.5">
+          <div className="pt-1.5 flex items-center gap-2 pb-safe">
             {!editingTransaction && (
               <button
                 type="button"

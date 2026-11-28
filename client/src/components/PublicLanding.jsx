@@ -28,10 +28,10 @@ export default function PublicLanding({ onOpenAuth, onOpenLegal }) {
   const { t } = useLanguage();
 
   return (
-    <div className="min-h-screen bg-[var(--bg-app)] text-slate-800 dark:text-slate-100 flex flex-col transition-colors selection:bg-[#6C47FF] selection:text-white overflow-x-hidden">
+    <div className="min-h-dvh bg-[var(--bg-app)] text-slate-800 dark:text-slate-100 flex flex-col transition-colors selection:bg-[#6C47FF] selection:text-white overflow-x-hidden pb-safe">
       
       {/* 1. TOP NAVBAR */}
-      <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#120F24]/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-8 py-3.5 flex items-center justify-between">
+      <header className="sticky top-0 z-50 bg-white/85 dark:bg-[#120F24]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-8 pt-safe-header pb-3.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#5B27DC] via-[#6C47FF] to-[#A855F7] text-white flex items-center justify-center font-black text-base shadow-md shadow-purple-600/30">
             ₹

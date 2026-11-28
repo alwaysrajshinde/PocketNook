@@ -486,7 +486,7 @@ export default function Transactions({
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-safe-overlay bg-slate-900/60 backdrop-blur-xs animate-fade-in">
           <div className="fixed inset-0" onClick={() => setDeleteConfirmId(null)} />
           <div className="relative z-10 bg-white dark:bg-[#1A172B] rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl border border-slate-100 dark:border-white/10 animate-scale-in">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">

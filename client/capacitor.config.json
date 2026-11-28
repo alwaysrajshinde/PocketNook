@@ -34,9 +34,13 @@
       "backgroundColor": "#0d0b18",
       "style": "DARK"
     },
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover",
+      "style": "DEFAULT"
+    },
     "Keyboard": {
-      "resize": "body",
-      "resizeOnFullScreen": true
+      "resize": "body"
     },
     "SocialLogin": {
       "providers": {

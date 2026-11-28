@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, BarChart2, Plus, ArrowRight, Sparkles, Eye, EyeOff } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
+import SpeedChips from '../components/SpeedChips';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function AndroidHome({
   dashboardData,
+  categories = [],
   onOpenAddExpense,
+  onQuickAddExpense,
   onViewAllCategories,
   onViewAllTransactions,
   onSetBudget,
@@ -217,6 +220,15 @@ export default function AndroidHome({
           </div>
         </div>
       </div>
+
+      {/* ========================================================
+          Feature: Speed Chips 1-Tap Frequent Expense Widget (QA parity)
+         ======================================================== */}
+      <SpeedChips
+        onQuickAdd={onQuickAddExpense}
+        categories={categories}
+        formatCurrency={formatCurrency}
+      />
 
       {/* ========================================================
           3. Top Categories Card (Matching Android UI Reference)

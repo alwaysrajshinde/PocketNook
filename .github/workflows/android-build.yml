@@ -16,9 +16,14 @@ on:
         type: boolean
         required: true
         default: true
+      publish_ota:
+        description: 'Publish signed OTA zip to GitHub Release & update-manifest.json to ota-manifest branch'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build_android_and_ota:
@@ -61,7 +66,7 @@ jobs:
           VITE_IS_QA: 'false'
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID || vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_UPDATE_PUBLIC_KEY_JWK: ${{ vars.VITE_UPDATE_PUBLIC_KEY_JWK || secrets.VITE_UPDATE_PUBLIC_KEY_JWK }}
-          VITE_UPDATE_MANIFEST_URL: ${{ vars.VITE_UPDATE_MANIFEST_URL || 'https://alwaysrajshinde.github.io/PocketNook/update-manifest.json' }}
+          VITE_UPDATE_MANIFEST_URL: ${{ vars.VITE_UPDATE_MANIFEST_URL || 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json' }}
         run: |
           if [ "${{ inputs.build_apk }}" = "true" ]; then
             if [ -z "$VITE_GOOGLE_CLIENT_ID" ] || [[ "$VITE_GOOGLE_CLIENT_ID" == *"-web-client."* ]]; then
@@ -172,3 +177,38 @@ jobs:
           name: pocketnook-android-apk-v${{ steps.meta.outputs.web_version }}
           path: apk-artifacts/
           retention-days: 30
+
+      - name: Publish Approved OTA Release & Signed Manifest
+        if: ${{ inputs.publish_ota }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.meta.outputs.web_version }}"
+          ZIP_PATH="ota-artifacts/pocketnook-web-${TAG}.zip"
+          ASSETS=("$ZIP_PATH" "ota-artifacts/update-manifest.json")
+          if [ "${{ inputs.build_apk }}" = "true" ] && [ -f "apk-artifacts/PocketNook-${TAG}-release.apk" ]; then
+            ASSETS+=("apk-artifacts/PocketNook-${TAG}-release.apk")
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --title "PocketNook ${TAG}" \
+              --notes "${{ inputs.release_notes }}" \
+              --target "${{ github.sha }}"
+          fi
+
+          # Publish signed update-manifest.json to dedicated ota-manifest branch (HTTPS + CORS *, zero conflict with main/deploy.yml)
+          TMP_OTA=$(mktemp -d)
+          cp "ota-artifacts/update-manifest.json" "${TMP_OTA}/update-manifest.json"
+          (
+            cd "$TMP_OTA"
+            git init -b ota-manifest
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add update-manifest.json
+            git commit -m "ota: publish signed update-manifest ${TAG}"
+            git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+            git push --force origin ota-manifest
+          )
+          rm -rf "$TMP_OTA"

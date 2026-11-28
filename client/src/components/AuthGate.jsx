@@ -144,7 +144,7 @@ export default function AuthGate({ children }) {
   // Loading existing session on startup
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#f4f5fa] dark:bg-[#0d0b18] flex items-center justify-center p-6">
+      <div className="min-h-dvh bg-[#f4f5fa] dark:bg-[#0d0b18] flex items-center justify-center p-6 pt-safe pb-safe">
         <div className="flex flex-col items-center gap-3 text-slate-500">
           <div className="w-10 h-10 border-3 border-[#6C47FF] border-t-transparent rounded-full animate-spin" />
           <span className="text-xs font-semibold tracking-wide">Connecting to your personal vault...</span>
@@ -300,7 +300,7 @@ export default function AuthGate({ children }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f8f9fe] via-[#ede9fe] to-[#e0e7ff] dark:from-[#0d0b18] dark:via-[#16132a] dark:to-[#1a1435] flex items-center justify-center p-4 sm:p-6 transition-colors">
+    <div className="min-h-dvh bg-gradient-to-br from-[#f8f9fe] via-[#ede9fe] to-[#e0e7ff] dark:from-[#0d0b18] dark:via-[#16132a] dark:to-[#1a1435] flex items-center justify-center px-4 sm:px-6 pt-[max(1rem,var(--pn-safe-top))] pb-[max(1rem,var(--pn-safe-bottom))] transition-colors">
       <div className="w-full max-w-md bg-white dark:bg-[#16132A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200/80 dark:border-white/10 relative overflow-hidden transition-all">
         {/* Ambient background glow */}
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-purple-500/15 rounded-full blur-2xl pointer-events-none" />

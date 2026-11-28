@@ -48,7 +48,7 @@ export default function OnboardingTourModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-safe-overlay bg-slate-900/70 backdrop-blur-sm animate-fade-in">
       <div className="relative w-full max-w-md bg-white dark:bg-[#16132A] rounded-3xl shadow-2xl p-6 border border-slate-100 dark:border-white/10 space-y-5 animate-scale-in transition-colors">
         
         {/* Header / Stepper indicators */}

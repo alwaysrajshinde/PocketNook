@@ -21,7 +21,7 @@ export default function LegalModal({ isOpen, onClose, initialTab = 'privacy' }) 
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" style={{ touchAction: 'none' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-safe-overlay bg-slate-900/60 backdrop-blur-sm animate-fade-in" style={{ touchAction: 'none' }}>
       <div className="fixed inset-0" onClick={onClose} />
       <div className="relative w-full max-w-2xl bg-white dark:bg-[#16132A] rounded-3xl shadow-2xl z-10 max-h-[85vh] flex flex-col overflow-hidden border border-slate-100 dark:border-white/10 transition-colors animate-scale-in" style={{ overscrollBehavior: 'contain' }}>
         

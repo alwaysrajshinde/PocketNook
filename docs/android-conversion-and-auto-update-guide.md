@@ -28,7 +28,7 @@ Uses **`@capgo/capacitor-updater` v8** strictly in **self-hosted `manual` mode**
 
 ### How Updates Work
 1. **Free Hosting Split:**
-   - **Signed Manifest (`update-manifest.json`):** Hosted over HTTPS on GitHub Pages (`https://alwaysrajshinde.github.io/PocketNook/update-manifest.json`).
+   - **Signed Manifest (`update-manifest.json`):** Hosted over permanent public HTTPS with CORS `*` on the dedicated `ota-manifest` branch (`https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json`) — or optionally GitHub Pages (`https://alwaysrajshinde.github.io/PocketNook/update-manifest.json`).
    - **Versioned Web ZIP Bundles (`pocketnook-web-vX.Y.Z.zip`):** Hosted on GitHub Releases (`https://github.com/alwaysrajshinde/PocketNook/releases/download/vX.Y.Z/pocketnook-web-vX.Y.Z.zip`).
 2. **Five Security & Compatibility Gates (`client/src/services/appUpdateService.js`):**
    - **HTTPS Allowlist:** Rejects non-HTTPS URLs and any origin outside GitHub Pages / GitHub Releases.
@@ -91,9 +91,9 @@ Your ECDSA P-256 keypair is pre-configured cleanly:
 
 - **Web-Only Update (UI, bug fixes, React/JS/CSS changes — users do NOT reinstall APK):**
   1. Bump version in `client/package.json` & root `package.json` (e.g. `2.4.6`).
-  2. Trigger **GitHub Actions → `PocketNook Android Release & OTA Bundle CI`** with `min_native_version_code` unchanged (e.g. `1`) and `build_apk: false`.
-  3. Attach `pocketnook-web-v2.4.6.zip` to GitHub Release `v2.4.6` and deploy `update-manifest.json` to GitHub Pages (`alwaysrajshinde.github.io/PocketNook/update-manifest.json`).
-  4. Installed Android APKs automatically fetch, verify, download in the background, and apply on next launch (or via **Restart & Apply**).
+  2. Trigger **GitHub Actions -> `PocketNook Android Release & OTA Bundle CI`** on `android-prod` with `min_native_version_code` unchanged (`1`), `build_apk: false`, and **`publish_ota: true`**.
+  3. GitHub Actions automatically creates/updates GitHub Release `v2.4.6` with `pocketnook-web-v2.4.6.zip` and pushes the signed `update-manifest.json` to branch `ota-manifest`.
+  4. In the Android app, users tap **More / Settings -> App Updates -> Check for Updates -> Update Now -> Restart App to Apply** (no APK reinstall needed!).
 
 - **Native Android Update Required (new APK must be installed):**
   Required whenever adding/updating **Capacitor plugins, `AndroidManifest.xml` permissions, Java/Kotlin `MainActivity`, Gradle SDK/AGP versions, or app icons/package ID**:

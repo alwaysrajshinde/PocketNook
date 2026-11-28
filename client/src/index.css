@@ -13,6 +13,12 @@
   --app-font-scale: 1;
   --app-font-size-num: 16;
 
+  /* Dynamic Safe Area Insets (Native Android Edge-to-Edge SystemBars + Mobile PWA) */
+  --pn-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --pn-safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --pn-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --pn-safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+
   /* Centralized Motion Tokens (100% Offline-First) */
   --motion-duration-fast: 140ms;
   --motion-duration-standard: 220ms;
@@ -83,13 +89,26 @@ html.theme-rose {
   --accent-purple: #f43f5e;
 }
 
-/* Safe Area Insets for Mobile PWA */
+/* Safe Area Insets for Native Android Edge-to-Edge & Mobile PWA */
 .pb-safe {
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 12px));
+  padding-bottom: max(0.5rem, var(--pn-safe-bottom, 0px));
 }
 
 .pt-safe {
-  padding-top: max(0.75rem, env(safe-area-inset-top, 12px));
+  padding-top: var(--pn-safe-top, 0px);
+}
+
+.pt-safe-header {
+  padding-top: calc(0.875rem + var(--pn-safe-top, 0px));
+}
+
+.pb-safe-main {
+  padding-bottom: calc(6.5rem + var(--pn-safe-bottom, 0px));
+}
+
+.modal-safe-overlay {
+  padding-top: max(0.75rem, var(--pn-safe-top, 0px));
+  padding-bottom: max(0.75rem, var(--pn-safe-bottom, 0px));
 }
 
 /* Polished styling for native select dropdowns and options across light & dark themes */

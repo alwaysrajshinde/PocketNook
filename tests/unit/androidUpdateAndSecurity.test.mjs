@@ -35,6 +35,7 @@ test('SemVer normalization & comparison handles OTA web version upgrades cleanly
 });
 
 test('Trusted HTTPS origin check rejects HTTP and untrusted third-party hosts', () => {
+  assert.equal(isTrustedHttpsUrl('https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json'), true);
   assert.equal(isTrustedHttpsUrl('https://alwaysrajshinde.github.io/PocketNook/update-manifest.json'), true);
   assert.equal(isTrustedHttpsUrl('https://github.com/alwaysrajshinde/PocketNook/releases/download/v2.4.6/bundle.zip'), true);
   assert.equal(isTrustedHttpsUrl('http://alwaysrajshinde.github.io/PocketNook/update-manifest.json'), false);
@@ -190,7 +191,33 @@ test('checkForAppUpdates enforces offline skip, untrusted origin block, fail-clo
       globalThis.fetch = origFetch;
     }
 
-    // 5. Tampered bundleUrl domain fails closed
+    // 5. Compatible signed manifest returns user-controlled update_available with releaseNotes & pendingManifest
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () =>
+        signManifest({
+          webVersion: '2.4.6',
+          minNativeVersionCode: 1,
+          nativeVersionCode: 1,
+          bundleUrl: 'https://github.com/alwaysrajshinde/PocketNook/releases/download/v2.4.6/pocketnook-web-v2.4.6.zip',
+          sha256: 'd'.repeat(64),
+          releaseNotes: 'Speed Chips and Android safe area fix.'
+        })
+    });
+    try {
+      const availRes = await checkForAppUpdates({
+        manifestUrl: 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json',
+        publicKeyJwk: publicJwk
+      });
+      assert.equal(availRes.status, 'update_available');
+      assert.equal(availRes.latestVersion, '2.4.6');
+      assert.equal(availRes.releaseNotes, 'Speed Chips and Android safe area fix.');
+      assert.ok(availRes.pendingManifest);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+
+    // 6. Tampered bundleUrl domain fails closed
     globalThis.fetch = async () => ({
       ok: true,
       json: async () => ({

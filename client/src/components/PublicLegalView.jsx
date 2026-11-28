@@ -14,9 +14,9 @@ export default function PublicLegalView({ initialTab = 'privacy', onBack }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f9fe] dark:bg-[#0d0b18] text-slate-800 dark:text-slate-200 transition-colors">
+    <div className="min-h-dvh bg-[#f8f9fe] dark:bg-[#0d0b18] text-slate-800 dark:text-slate-200 transition-colors pb-safe">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/90 dark:bg-[#16132A]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-8 py-3.5 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-white/90 dark:bg-[#16132A]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-8 pt-safe-header pb-3.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {onBack && (
             <button

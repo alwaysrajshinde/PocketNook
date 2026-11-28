@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
 import CustomDropdown from '../components/CustomDropdown';
+import SpeedChips from '../components/SpeedChips';
 import { useToast } from '../context/ToastContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -294,6 +295,15 @@ export default function Home({
           </div>
         </div>
       </div>
+
+      {/* ========================================================
+          Speed Chips 1-Tap Frequent Expense Widget (QA parity)
+         ======================================================== */}
+      <SpeedChips
+        onQuickAdd={onQuickAddExpense}
+        categories={categories}
+        formatCurrency={formatCurrency}
+      />
 
       {/* ========================================================
           ROW 2: Top Categories + Spending by Category + Monthly Trend
