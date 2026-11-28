@@ -1,21 +1,25 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
   sendPasswordResetEmail,
-  sendEmailVerification, 
+  sendEmailVerification,
   onAuthStateChanged,
   updateProfile,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
   confirmPasswordReset,
   applyActionCode,
   verifyPasswordResetCode
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 import { auth, isFirebaseConfigured } from '../firebase/config';
 import { resetSessionGreeting } from '../services/welcomeSessionService';
 import { ensureUserProfile, updateProfileName } from '../services/firestoreService';
+import { clearAllTokens, getGoogleClientId } from '../services/googleSheetsService';
 
 const AuthContext = createContext();
 const STORAGE_KEY = 'expense_tracker_auth_session';
@@ -212,16 +216,39 @@ export function AuthProvider({ children }) {
   };
 
   /**
-   * Universal Sign In with Google Popup (Firebase OAuth)
+   * Universal Sign In with Google (Native Credential Manager on Android Capacitor, Popup on Web)
    */
   const loginWithGoogle = async () => {
     setAuthError(null);
     if (isFirebaseConfigured && auth) {
       try {
-        const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
+        let result;
+        if (Capacitor.isNativePlatform()) {
+          const webClientId = getGoogleClientId();
+          if (!webClientId || webClientId.includes('-web-client.')) {
+            throw new Error('Google Sign-In Web Client ID (VITE_GOOGLE_CLIENT_ID) is not configured for Android.');
+          }
+          await SocialLogin.initialize({
+            google: {
+              webClientId
+            }
+          });
+          const loginRes = await SocialLogin.login({
+            provider: 'google',
+            options: {}
+          });
+          const idToken = loginRes?.result?.idToken;
+          if (!idToken) {
+            throw new Error('Google Sign-In did not return an ID token.');
+          }
+          const credential = GoogleAuthProvider.credential(idToken);
+          result = await signInWithCredential(auth, credential);
+        } else {
+          const provider = new GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: 'select_account' });
+          result = await signInWithPopup(auth, provider);
+        }
 
-        const result = await signInWithPopup(auth, provider);
         const fbUser = result.user;
 
         const cleanEmail = (fbUser.email || '').trim().toLowerCase();
@@ -232,6 +259,9 @@ export function AuthProvider({ children }) {
           email: cleanEmail,
           name: fbUser.displayName || (isRaj ? 'Raj Shinde' : cleanEmail.split('@')[0]),
           picture: fbUser.photoURL || '',
+          emailVerified: true,
+          isGoogleUser: true,
+          providerId: 'google.com',
           expires_at: Date.now() + 30 * 24 * 60 * 60 * 1000
         };
         setUser(sessionData);
@@ -239,8 +269,8 @@ export function AuthProvider({ children }) {
         await ensureUserProfile(fbUser.uid, cleanEmail, sessionData.name);
         return { success: true, user: sessionData };
       } catch (err) {
-        if (err.code === 'auth/popup-closed-by-user') {
-          return null; // User simply closed the popup
+        if (err.code === 'auth/popup-closed-by-user' || /cancel/i.test(err?.message || '')) {
+          return null; // User cancelled prompt
         }
         let msg = err.message;
         if (err.code === 'auth/account-exists-with-different-credential') {
@@ -458,7 +488,7 @@ export function AuthProvider({ children }) {
   };
 
   /**
-   * Log Out / Disconnect Session
+   * Log Out / Disconnect Session (clears session tokens, Google auth cache & triggers in-memory state wipe)
    */
   const logout = async () => {
     try {
@@ -466,10 +496,23 @@ export function AuthProvider({ children }) {
         await signOut(auth);
       }
     } catch (e) {}
-    localStorage.removeItem(STORAGE_KEY);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await SocialLogin.logout({ provider: 'google' });
+      } catch (e) {}
+    }
+    clearAllTokens();
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('expense_tracker_current_user_id');
+      sessionStorage.removeItem('et_dismiss_verify_banner');
+    } catch (e) {}
     resetSessionGreeting();
     setUser(null);
     setAuthError(null);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('expense_tracker_logout'));
+    }
   };
 
   return (

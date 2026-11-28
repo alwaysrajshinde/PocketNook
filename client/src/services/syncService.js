@@ -12,6 +12,9 @@ import {
 import * as firestoreService from './firestoreService';
 import { isFirebaseConfigured, db } from '../firebase/config';
 import { doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
+import { Network } from '@capacitor/network';
+import { App as CapacitorApp } from '@capacitor/app';
 
 class SyncService {
   constructor() {
@@ -29,6 +32,26 @@ class SyncService {
           this.triggerAutoSync();
         }
       });
+
+      if (Capacitor.isNativePlatform()) {
+        Network.getStatus().then((status) => {
+          if (status.connected !== this.isOnline) {
+            if (status.connected) this.handleOnline();
+            else this.handleOffline();
+          }
+        }).catch(() => {});
+
+        Network.addListener('networkStatusChange', (status) => {
+          if (status.connected) this.handleOnline();
+          else this.handleOffline();
+        });
+
+        CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive && this.isOnline) {
+            this.triggerAutoSync();
+          }
+        });
+      }
     }
   }
 

@@ -22,9 +22,18 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { FontSizeProvider } from './context/FontSizeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { LanguageProvider } from './context/LanguageContext';
-import { ShieldCheck, X, WifiOff, RefreshCw } from 'lucide-react';
+import { ShieldCheck, X, WifiOff, RefreshCw, Download } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { SplashScreen } from '@capacitor/splash-screen';
 import * as api from './services/api';
 import syncService from './services/syncService';
+import {
+  checkForAppUpdates,
+  applyStagedBundleNow,
+  openNativeApkDownload
+} from './services/appUpdateService';
 import { APP_VERSION, APP_CHANGELOG_SUMMARY, APP_SHORT_DATE, APP_RELEASE_TIME } from './constants/version';
 import { exportTransactionsToExcel, exportDataToJson } from './services/exportService';
 import * as routeService from './services/routeService';
@@ -127,6 +136,75 @@ function MainApp() {
     resetSessionGreeting();
     if (logout) await logout();
   };
+
+  const [nativeUpdateState, setNativeUpdateState] = useState(null);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+
+  const handleCheckForUpdates = async ({ manual = false } = {}) => {
+    try {
+      setIsCheckingUpdates(true);
+      const result = await checkForAppUpdates();
+      setNativeUpdateState(result);
+      if (manual) {
+        if (result?.status === 'ready_to_install') {
+          showToast(`Update v${result.stagedVersion} downloaded & ready! Tap Restart to apply.`, 'success', 5000);
+        } else if (result?.status === 'native_update_required') {
+          showToast(`PocketNook v${result.latestVersion} requires a new APK installation.`, 'info', 5000);
+        } else if (result?.status === 'up_to_date') {
+          showToast(result.message || 'PocketNook is up to date!', 'success');
+        } else if (result?.status === 'offline') {
+          showToast('Offline — update check skipped.', 'info');
+        } else if (result?.error) {
+          showToast(result.error, 'warning');
+        }
+      }
+      return result;
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
+  // Native Capacitor Android status bar, splash screen hide, and automatic launch update check
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    SplashScreen.hide().catch(() => {});
+    handleCheckForUpdates({ manual: false }).catch(() => {});
+
+    let stateSub = null;
+    CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive && navigator.onLine) {
+        checkForAppUpdates().then(setNativeUpdateState).catch(() => {});
+      }
+    }).then((h) => { stateSub = h; }).catch(() => {});
+
+    return () => {
+      stateSub?.remove?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light }).catch(() => {});
+    StatusBar.setBackgroundColor({ color: isDark ? '#0d0b18' : '#f4f5fa' }).catch(() => {});
+  }, [isDark]);
+
+  // Wipe sensitive in-memory financial state immediately on logout / account switch
+  useEffect(() => {
+    const handleClearInMemoryState = () => {
+      setDashboardData(null);
+      setReportsData(null);
+      setCategories([]);
+      setAvailableMonths([new Date().toISOString().slice(0, 7)]);
+      setSettings({
+        monthly_budget: '12000',
+        currency: '₹',
+        user_name: 'User',
+        user_email: ''
+      });
+    };
+    window.addEventListener('expense_tracker_logout', handleClearInMemoryState);
+    return () => window.removeEventListener('expense_tracker_logout', handleClearInMemoryState);
+  }, []);
 
 
 
@@ -239,7 +317,7 @@ function MainApp() {
       if (remote?.transactions?.length > 0) {
         txs = remote.transactions;
       }
-      exportTransactionsToExcel(txs, `Expenses_${selectedMonth || 'all'}.xlsx`);
+      await exportTransactionsToExcel(txs, `Expenses_${selectedMonth || 'all'}.xlsx`);
       showToast('Excel ledger exported successfully!', 'success');
     } catch (e) {
       console.error('Export Excel failed:', e);
@@ -253,7 +331,10 @@ function MainApp() {
         month: selectedMonth && selectedMonth !== 'all' ? selectedMonth : undefined,
         limit: 10000
       });
-      exportDataToJson(data || {}, `Expenses_${selectedMonth || 'all'}.json`);
+      await exportDataToJson(
+        { exported_at: new Date().toISOString(), month: selectedMonth || 'all', categories, transactions: data?.transactions || api.getLocalTransactions() },
+        `Expenses_${selectedMonth || 'all'}.json`
+      );
       showToast('JSON backup exported successfully!', 'success');
     } catch (e) {
       console.error('Export JSON failed:', e);
@@ -313,11 +394,41 @@ function MainApp() {
 
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('hashchange', handleLocationChange);
+
+    let lastBackPress = 0;
+    let backSub = null;
+    if (Capacitor.isNativePlatform()) {
+      CapacitorApp.addListener('backButton', () => {
+        if (isAddModalOpen) { setIsAddModalOpen(false); setEditingTransaction(null); return; }
+        if (isImportModalOpen) { setIsImportModalOpen(false); return; }
+        if (isImportHistoryOpen) { setIsImportHistoryOpen(false); return; }
+        if (isNotificationsOpen) { setIsNotificationsOpen(false); return; }
+        if (isReleaseNotesOpen) { setIsReleaseNotesOpen(false); return; }
+        if (isOnboardingTourOpen) { setIsOnboardingTourOpen(false); return; }
+        if (activeTab === 'settings' && settingsSection) {
+          handleNavigate({ tab: 'settings', section: null });
+          return;
+        }
+        if (activeTab !== 'home') {
+          handleNavigate({ tab: 'home', section: null });
+          return;
+        }
+        const now = Date.now();
+        if (now - lastBackPress < 2000) {
+          CapacitorApp.exitApp().catch(() => {});
+        } else {
+          lastBackPress = now;
+          showToast('Press back again to exit PocketNook', 'info', 2000);
+        }
+      }).then((h) => { backSub = h; }).catch(() => {});
+    }
+
     return () => {
       window.removeEventListener('popstate', handleLocationChange);
       window.removeEventListener('hashchange', handleLocationChange);
+      backSub?.remove?.();
     };
-  }, [isAddModalOpen, isImportModalOpen, isImportHistoryOpen, isNotificationsOpen, isReleaseNotesOpen, isOnboardingTourOpen]);
+  }, [isAddModalOpen, isImportModalOpen, isImportHistoryOpen, isNotificationsOpen, isReleaseNotesOpen, isOnboardingTourOpen, activeTab, settingsSection]);
 
   const openAddModal = (tx = null) => {
     setEditingTransaction(tx);
@@ -675,6 +786,17 @@ function MainApp() {
                   }}
                   onImportFile={api.importExcelOrCsv}
                   onRestoreBackup={api.restoreBackup}
+                  onExportExcel={handleExportExcel}
+                  onExportJson={handleExportJson}
+                  nativeUpdateState={nativeUpdateState}
+                  isCheckingUpdates={isCheckingUpdates}
+                  onCheckUpdates={() => handleCheckForUpdates({ manual: true })}
+                  onApplyUpdate={async () => {
+                    if (nativeUpdateState?.stagedBundleId) {
+                      await applyStagedBundleNow(nativeUpdateState.stagedBundleId);
+                    }
+                  }}
+                  onDownloadNativeApk={() => openNativeApkDownload(nativeUpdateState?.apkUrl)}
                   onRefreshAll={handleRefreshAll}
                   onOpenImport={() => setIsImportModalOpen(true)}
                   onOpenImportHistory={() => setIsImportHistoryOpen(true)}
@@ -703,6 +825,33 @@ function MainApp() {
         <div className="w-full max-w-lg mx-auto min-h-screen bg-[var(--bg-app)] flex flex-col relative transition-colors">
           {/* Real-time Offline / Syncing Progress Indicator (Mobile) */}
           <SyncProgressIndicator syncState={syncState} isDesktop={false} />
+
+          {/* Native Android Update Ready / Required Banner */}
+          {Capacitor.isNativePlatform() && (nativeUpdateState?.status === 'ready_to_install' || nativeUpdateState?.status === 'native_update_required') && (
+            <div className="bg-purple-500/10 border-b border-purple-500/20 px-4 py-2 text-xs text-purple-900 dark:text-purple-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Download size={14} className="text-[#6C47FF] dark:text-[#C4B5FD] shrink-0" />
+                <span className="truncate font-semibold">
+                  {nativeUpdateState.status === 'ready_to_install'
+                    ? `Update v${nativeUpdateState.stagedVersion} verified & ready`
+                    : `New Android APK v${nativeUpdateState.latestVersion} available`}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (nativeUpdateState.status === 'ready_to_install' && nativeUpdateState.stagedBundleId) {
+                    await applyStagedBundleNow(nativeUpdateState.stagedBundleId);
+                  } else {
+                    await openNativeApkDownload(nativeUpdateState.apkUrl);
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg bg-[#6C47FF] text-white font-bold text-[11px] shrink-0 cursor-pointer"
+              >
+                {nativeUpdateState.status === 'ready_to_install' ? 'Restart & Apply' : 'Download APK'}
+              </button>
+            </div>
+          )}
 
           {/* Unverified Email Warning Banner (Mobile) */}
           {user && !isEmailVerified && !dismissedEmailBanner && (
@@ -878,6 +1027,17 @@ function MainApp() {
                   }}
                   onImportFile={api.importExcelOrCsv}
                   onRestoreBackup={api.restoreBackup}
+                  onExportExcel={handleExportExcel}
+                  onExportJson={handleExportJson}
+                  nativeUpdateState={nativeUpdateState}
+                  isCheckingUpdates={isCheckingUpdates}
+                  onCheckUpdates={() => handleCheckForUpdates({ manual: true })}
+                  onApplyUpdate={async () => {
+                    if (nativeUpdateState?.stagedBundleId) {
+                      await applyStagedBundleNow(nativeUpdateState.stagedBundleId);
+                    }
+                  }}
+                  onDownloadNativeApk={() => openNativeApkDownload(nativeUpdateState?.apkUrl)}
                   onRefreshAll={handleRefreshAll}
                   onOpenImport={() => setIsImportModalOpen(true)}
                   onOpenImportHistory={() => setIsImportHistoryOpen(true)}

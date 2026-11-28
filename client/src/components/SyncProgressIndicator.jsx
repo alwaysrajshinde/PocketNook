@@ -22,6 +22,7 @@ export default function SyncProgressIndicator({ syncState, isDesktop = false }) 
     !syncState.isOnline || 
     syncState.status === 'syncing' || 
     syncState.status === 'error' || 
+    syncState.status === 'failed' ||
     (syncState.isOnline && syncState.pendingCount > 0) ||
     showSyncedBanner;
 
@@ -35,7 +36,7 @@ export default function SyncProgressIndicator({ syncState, isDesktop = false }) 
   };
 
   const isSyncing = syncState.status === 'syncing' || syncState.isSyncing;
-  const isError = syncState.status === 'error';
+  const isError = syncState.status === 'error' || syncState.status === 'failed';
   const isOffline = !syncState.isOnline;
 
   return (

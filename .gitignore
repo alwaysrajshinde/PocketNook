@@ -15,6 +15,11 @@ data/*.db-shm
 .env
 .env.local
 .env.*.local
+*.jks
+*.keystore
+*.pem
+keystore.properties
+android-release/
 /config.js
 /client/public/config.js
 /client/public/firebase-config.js

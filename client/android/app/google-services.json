@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "506613300270",
+    "project_id": "expense-tracker-d98cd",
+    "storage_bucket": "expense-tracker-d98cd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:506613300270:android:05d6b86f367c72c25573bf",
+        "android_client_info": {
+          "package_name": "com.pocketnook.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "506613300270-idgckh9a7kjt35ot025lfmkpv3jqr5i8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARtfPRGKCJStkpCWr8CG4Na6MX_tWRisc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "506613300270-idgckh9a7kjt35ot025lfmkpv3jqr5i8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

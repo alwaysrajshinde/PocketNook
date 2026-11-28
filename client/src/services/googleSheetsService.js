@@ -4,6 +4,8 @@
  * duplicate-prevented updates, and multi-user scoped metadata storage.
  */
 
+import { Capacitor } from '@capacitor/core';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 import { updateSettings } from './firestoreService';
 import { isFirebaseConfigured } from '../firebase/config';
 
@@ -58,28 +60,39 @@ export function saveToken(userId, accessToken, expiresInSeconds = 3599) {
  * Clears cached Google Sheets token (e.g. on revocation or logout)
  */
 export function clearToken(userId) {
-  if (!userId || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
   try {
-    sessionStorage.removeItem(`${TOKEN_STORAGE_PREFIX}${userId}`);
+    if (userId) {
+      sessionStorage.removeItem(`${TOKEN_STORAGE_PREFIX}${userId}`);
+    }
   } catch (e) {}
 }
 
 /**
- * Retrieves saved spreadsheet configuration for this user
+ * Clears all cached Google Sheets session tokens across sessionStorage on logout/account switch
+ */
+export function clearAllTokens() {
+  if (typeof window === 'undefined') return;
+  try {
+    const keysToRemove = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith(TOKEN_STORAGE_PREFIX)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => sessionStorage.removeItem(k));
+  } catch (e) {}
+}
+
+/**
+ * Retrieves saved spreadsheet configuration strictly scoped to the authenticated userId
  */
 export function getSavedSheetConfig(userId) {
   if (!userId || typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(`${CONFIG_STORAGE_PREFIX}${userId}`);
     if (raw) return JSON.parse(raw);
-    // Check by prefix to support account email or session ID matching
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(CONFIG_STORAGE_PREFIX)) {
-        const val = localStorage.getItem(k);
-        if (val) return JSON.parse(val);
-      }
-    }
   } catch (e) {}
   return null;
 }
@@ -127,7 +140,29 @@ export function requestGoogleSheetsAccess(userId, userEmail) {
       return resolve(mockToken);
     }
 
-    // 4. Verify Google Identity Services client script
+    // 4. Native Android Capacitor Google OAuth via SocialLogin
+    if (Capacitor.isNativePlatform()) {
+      const clientId = getGoogleClientId();
+      if (!clientId || clientId.includes('-web-client.')) {
+        return reject(new Error('Google Web Client ID (VITE_GOOGLE_CLIENT_ID) is required for native Sheets authorization.'));
+      }
+      SocialLogin.initialize({ google: { webClientId: clientId } })
+        .then(() => SocialLogin.login({ provider: 'google', options: { scopes: [SCOPES] } }))
+        .then((res) => {
+          const token = res?.result?.accessToken?.token || res?.result?.accessToken;
+          if (!token) {
+            throw new Error('Google Sheets authorization did not return an access token.');
+          }
+          saveToken(userId, token, 3599);
+          resolve(token);
+        })
+        .catch((err) => {
+          reject(new Error(err?.message || 'Native Google Sheets authorization failed.'));
+        });
+      return;
+    }
+
+    // 5. Verify Google Identity Services client script on Web
     if (typeof window === 'undefined' || !window.google || !window.google.accounts || !window.google.accounts.oauth2) {
       return reject(new Error('Google Identity Services library is not loaded. Please ensure you are online and refresh the page.'));
     }

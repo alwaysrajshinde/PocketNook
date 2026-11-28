@@ -1,5 +1,6 @@
 import * as firestoreService from './firestoreService';
 import { isFirebaseConfigured } from '../firebase/config';
+import rajHistoricalData from '../data/rajHistoricalData.json';
 import { 
   computeDashboardFromTransactions, 
   computeReportsFromTransactions,
@@ -861,6 +862,75 @@ export async function importExcelOrCsv(file) {
 }
 
 export async function restoreBackup(file) {
+  if (!file) throw new Error('No backup file selected');
+
+  // Parse and validate client-side JSON backup cleanly so Android APK and offline users can restore directly
+  if (typeof file.text === 'function') {
+    const rawText = await file.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      throw new Error('Invalid JSON backup file.');
+    }
+
+    const payload = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+    const rawTxs = Array.isArray(payload) ? payload : (Array.isArray(payload?.transactions) ? payload.transactions : null);
+    const rawCats = Array.isArray(payload?.categories) ? payload.categories : [];
+
+    if (!rawTxs && rawCats.length === 0) {
+      throw new Error('Backup file must contain a valid "transactions" or "categories" array.');
+    }
+
+    const uid = getCurrentUserId();
+    const existingCats = await getCategories();
+    const existingCatNames = new Set((existingCats || []).map((c) => String(c.name || '').toLowerCase()));
+    let catsRestored = 0;
+    for (const c of rawCats.slice(0, 200)) {
+      const catName = String(c?.name || '').trim().slice(0, 60);
+      if (!catName || existingCatNames.has(catName.toLowerCase())) continue;
+      existingCatNames.add(catName.toLowerCase());
+      await createCategory({
+        name: catName,
+        icon: String(c?.icon || 'Tag').slice(0, 32),
+        color: /^#[0-9a-fA-F]{3,8}$/.test(c?.color || '') ? c.color : '#6C47FF',
+        is_quick: Boolean(c?.is_quick)
+      });
+      catsRestored++;
+    }
+
+    const existingTxs = getLocalTransactions();
+    const existingIds = new Set((existingTxs || []).map((t) => String(t.id)));
+    let txsRestored = 0;
+    for (const tx of (rawTxs || []).slice(0, 10000)) {
+      const amount = parseFloat(tx?.amount);
+      if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 1e9) continue;
+      const dateStr = /^\d{4}-\d{2}-\d{2}/.test(String(tx?.date || ''))
+        ? String(tx.date).slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+      const id = tx?.id ? String(tx.id) : `RST-${uid}-${Date.now()}-${txRestored}`;
+      if (existingIds.has(id)) continue;
+      existingIds.add(id);
+      await createTransaction({
+        id,
+        amount,
+        date: dateStr,
+        month_key: dateStr.slice(0, 7),
+        category: String(tx?.category || 'Other').trim().slice(0, 60) || 'Other',
+        payment_mode: String(tx?.payment_mode || 'UPI').trim().slice(0, 32) || 'UPI',
+        description: String(tx?.description || '').trim().slice(0, 240),
+        is_refund: Boolean(tx?.is_refund || amount < 0)
+      });
+      txsRestored++;
+    }
+
+    return {
+      success: true,
+      transactions_restored: txsRestored,
+      categories_restored: catsRestored
+    };
+  }
+
   const formData = new FormData();
   formData.append('file', file);
   const res = await fetch(`${API_BASE}/backup/restore`, {

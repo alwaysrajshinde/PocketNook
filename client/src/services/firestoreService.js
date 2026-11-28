@@ -499,7 +499,7 @@ export async function addTransaction(userId, data) {
 
   try {
     const txCol = collection(db, 'users', userId, 'transactions');
-    const docRef = doc(txCol);
+    const docRef = data?.id ? doc(txCol, String(data.id)) : doc(txCol);
     const txId = docRef.id;
 
     const parsedDate = data.date || new Date().toISOString().slice(0, 10);

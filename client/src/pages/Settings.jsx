@@ -46,6 +46,13 @@ export default function Settings({
   onReassignCategory,
   onImportFile,
   onRestoreBackup,
+  onExportExcel = null,
+  onExportJson = null,
+  nativeUpdateState = null,
+  isCheckingUpdates = false,
+  onCheckUpdates = null,
+  onApplyUpdate = null,
+  onDownloadNativeApk = null,
   onRefreshAll,
   formatCurrency,
   selectedMonth,
@@ -367,22 +374,47 @@ export default function Settings({
   const handleExcelExport = async () => {
     try {
       setStatusMsg({ type: 'info', text: 'Generating comprehensive Excel ledger...' });
-      await exportTransactionsToExcel();
+      if (typeof onExportExcel === 'function') {
+        await onExportExcel();
+      } else {
+        let txs = getLocalTransactions();
+        const remote = await getTransactions({
+          month: selectedMonth && selectedMonth !== 'all' ? selectedMonth : undefined,
+          limit: 10000
+        });
+        if (remote?.transactions?.length > 0) {
+          txs = remote.transactions;
+        }
+        await exportTransactionsToExcel(txs, `Expenses_${selectedMonth || 'all'}.xlsx`);
+        showToast('Excel ledger exported successfully!', 'success');
+      }
       setStatusMsg({ type: 'success', text: 'Excel ledger exported successfully!' });
-      showToast('Excel ledger downloaded!', 'success');
     } catch (err) {
       setStatusMsg({ type: 'error', text: err.message || 'Failed to export Excel file' });
+      showToast(err.message || 'Excel export failed', 'error');
     }
   };
 
   const handleJsonExport = async () => {
     try {
       setStatusMsg({ type: 'info', text: 'Creating full JSON data backup...' });
-      await exportDataToJson();
-      setStatusMsg({ type: 'success', text: 'JSON backup downloaded successfully!' });
-      showToast('JSON backup downloaded!', 'success');
+      if (typeof onExportJson === 'function') {
+        await onExportJson();
+      } else {
+        const data = await getTransactions({
+          month: selectedMonth && selectedMonth !== 'all' ? selectedMonth : undefined,
+          limit: 10000
+        });
+        await exportDataToJson(
+          { exported_at: new Date().toISOString(), month: selectedMonth || 'all', categories, transactions: data?.transactions || getLocalTransactions() },
+          `Expenses_${selectedMonth || 'all'}.json`
+        );
+        showToast('JSON backup exported successfully!', 'success');
+      }
+      setStatusMsg({ type: 'success', text: 'JSON backup exported successfully!' });
     } catch (err) {
       setStatusMsg({ type: 'error', text: err.message || 'Failed to export JSON backup' });
+      showToast(err.message || 'JSON backup failed', 'error');
     }
   };
 
@@ -2785,10 +2817,15 @@ export default function Settings({
         onClose={() => setActiveComingSoonFeature(null)}
       />
 
-      {/* PWA Install Modal (iOS, Android & Desktop) */}
+      {/* PWA Install Modal (iOS, Android & Desktop) / Native Android App Updater */}
       <InstallModal
         isOpen={isInstallModalOpen}
         onClose={() => setIsInstallModalOpen(false)}
+        nativeUpdateState={nativeUpdateState}
+        isCheckingUpdates={isCheckingUpdates}
+        onCheckUpdates={onCheckUpdates}
+        onApplyUpdate={onApplyUpdate}
+        onDownloadNativeApk={onDownloadNativeApk}
       />
     </div>
   );

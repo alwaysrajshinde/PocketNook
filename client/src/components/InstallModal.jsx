@@ -1,16 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { Capacitor } from '@capacitor/core';
 import {
   X, Smartphone, Share, PlusSquare, ArrowUpRight, CheckCircle2,
-  ExternalLink, Sparkles, Download, Laptop, Compass, AlertCircle
+  ExternalLink, Sparkles, Download, Laptop, Compass, AlertCircle, RefreshCw, ShieldCheck
 } from 'lucide-react';
 import { APP_VERSION } from '../constants/version';
+import { getInstalledVersionInfo } from '../services/appUpdateService';
 
-export default function InstallModal({ isOpen, onClose }) {
+export default function InstallModal({
+  isOpen,
+  onClose,
+  nativeUpdateState = null,
+  isCheckingUpdates = false,
+  onCheckUpdates = null,
+  onApplyUpdate = null,
+  onDownloadNativeApk = null
+}) {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isInAppBrowser, setIsInAppBrowser] = useState(false);
+  const [nativeInfo, setNativeInfo] = useState(null);
+  const isNativeAndroid = Capacitor.isNativePlatform();
+
+  useEffect(() => {
+    if (isNativeAndroid && isOpen) {
+      getInstalledVersionInfo().then(setNativeInfo).catch(() => {});
+    }
+  }, [isNativeAndroid, isOpen]);
 
   useEffect(() => {
     // Check if running in standalone mode (already installed)
@@ -91,8 +109,76 @@ export default function InstallModal({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* Already Installed State */}
-        {isInstalled ? (
+        {/* Already Installed State or Native Android Live Update Panel */}
+        {isNativeAndroid ? (
+          <div className="space-y-3.5" data-testid="native-update-panel">
+            <div className="p-4 rounded-2xl bg-purple-500/10 border border-purple-500/25 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <ShieldCheck size={16} className="text-[#6C47FF]" />
+                  <span>PocketNook Android</span>
+                </span>
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-[#6C47FF] dark:text-[#C084FC]">
+                  v{nativeInfo?.webVersion || APP_VERSION.replace(/^v/, '')} (Build {nativeInfo?.nativeVersionCode || 1})
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                Compatible web updates are automatically downloaded, cryptographically verified (ECDSA + SHA-256), and rolled back automatically if startup fails.
+              </p>
+            </div>
+
+            {nativeUpdateState?.message && (
+              <div className={`p-3 rounded-2xl border text-xs ${
+                nativeUpdateState.status === 'error'
+                  ? 'bg-rose-500/10 border-rose-500/25 text-rose-700 dark:text-rose-300'
+                  : nativeUpdateState.status === 'ready_to_install' || nativeUpdateState.status === 'native_update_required'
+                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
+              }`}>
+                <div className="font-bold">{nativeUpdateState.message}</div>
+                {nativeUpdateState.releaseNotes && (
+                  <p className="text-[11px] mt-1 opacity-90">{nativeUpdateState.releaseNotes}</p>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              {nativeUpdateState?.status === 'ready_to_install' && onApplyUpdate && (
+                <button
+                  type="button"
+                  onClick={onApplyUpdate}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 size={15} />
+                  <span>Restart &amp; Apply Update Now</span>
+                </button>
+              )}
+
+              {nativeUpdateState?.status === 'native_update_required' && onDownloadNativeApk && (
+                <button
+                  type="button"
+                  onClick={onDownloadNativeApk}
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Download size={15} />
+                  <span>Download Signed APK Update</span>
+                </button>
+              )}
+
+              {onCheckUpdates && (
+                <button
+                  type="button"
+                  onClick={onCheckUpdates}
+                  disabled={isCheckingUpdates}
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#6C47FF] hover:bg-[#5835E5] disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw size={14} className={isCheckingUpdates ? 'animate-spin' : ''} />
+                  <span>{isCheckingUpdates ? 'Checking for Updates...' : 'Check for Updates'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : isInstalled ? (
           <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-800 dark:text-emerald-300 text-xs space-y-2 text-center">
             <CheckCircle2 size={32} className="mx-auto text-emerald-500" />
             <div className="font-bold text-sm">PocketNook is Installed!</div>
