@@ -22,9 +22,9 @@ on:
         required: true
         default: false
       manifest_url:
-        description: 'Optional OTA manifest URL override (defaults to production ota-manifest)'
+        description: 'Isolated test OTA manifest URL (defaults to ota-manifest-test on ota-test-build)'
         required: false
-        default: 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json'
+        default: 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest-test/update-manifest.json'
 
 permissions:
   contents: write
@@ -70,10 +70,14 @@ jobs:
           VITE_IS_QA: 'false'
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID || vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_UPDATE_PUBLIC_KEY_JWK: ${{ vars.VITE_UPDATE_PUBLIC_KEY_JWK || secrets.VITE_UPDATE_PUBLIC_KEY_JWK }}
-          VITE_UPDATE_MANIFEST_URL: ${{ inputs.manifest_url || vars.VITE_UPDATE_MANIFEST_URL || 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json' }}
+          VITE_UPDATE_MANIFEST_URL: ${{ inputs.manifest_url || 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest-test/update-manifest.json' }}
         run: |
           echo "Using VITE_UPDATE_MANIFEST_URL=${VITE_UPDATE_MANIFEST_URL}"
           echo "publish_ota=${{ inputs.publish_ota }}"
+          if [[ "$VITE_UPDATE_MANIFEST_URL" == *"/ota-manifest/update-manifest.json"* ]]; then
+            echo "ERROR: Isolated test build must NOT target production ota-manifest!"
+            exit 1
+          fi
           if [ "${{ inputs.build_apk }}" = "true" ]; then
             if [ -z "$VITE_GOOGLE_CLIENT_ID" ] || [[ "$VITE_GOOGLE_CLIENT_ID" == *"-web-client."* ]]; then
               echo "ERROR: Missing or placeholder VITE_GOOGLE_CLIENT_ID. Set your Firebase Web application OAuth Client ID in GitHub Secrets/Variables before building the APK."
@@ -81,11 +85,21 @@ jobs:
             fi
           fi
           npm run build
+          if ! grep -q "ota-manifest-test/update-manifest.json" dist/assets/*.js; then
+            echo "ERROR: Compiled Vite bundle does NOT contain ota-manifest-test/update-manifest.json!"
+            exit 1
+          fi
+          if grep -q "/ota-manifest/update-manifest.json" dist/assets/*.js; then
+            echo "ERROR: Compiled Vite bundle still contains production /ota-manifest/update-manifest.json!"
+            exit 1
+          fi
+          echo "Verified compiled dist JS embeds only the test manifest URL."
 
       - name: Package & Sign Live Web OTA Bundle
         env:
           UPDATE_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PEM }}
           VITE_UPDATE_PUBLIC_KEY_JWK: ${{ vars.VITE_UPDATE_PUBLIC_KEY_JWK || secrets.VITE_UPDATE_PUBLIC_KEY_JWK }}
+          EFFECTIVE_MANIFEST_URL: ${{ inputs.manifest_url || 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest-test/update-manifest.json' }}
         run: |
           if [ -z "$UPDATE_SIGNING_PRIVATE_KEY_PEM" ]; then
             echo "ERROR: Missing UPDATE_SIGNING_PRIVATE_KEY_PEM secret (never ship unsigned OTA manifests)."
@@ -94,13 +108,17 @@ jobs:
           mkdir -p ota-artifacts
           ZIP_NAME="pocketnook-web-v${{ steps.meta.outputs.web_version }}.zip"
           (cd client/dist && zip -r "../../ota-artifacts/${ZIP_NAME}" .)
+          MANIFEST_TAG="v${{ steps.meta.outputs.web_version }}"
+          if [[ "$EFFECTIVE_MANIFEST_URL" == *"ota-manifest-test"* ]]; then
+            MANIFEST_TAG="v${{ steps.meta.outputs.web_version }}-ota-test"
+          fi
           node scripts/generate-update-manifest.mjs \
             --zip "ota-artifacts/${ZIP_NAME}" \
             --version "${{ steps.meta.outputs.web_version }}" \
             --minNativeCode "${{ inputs.min_native_version_code }}" \
             --nativeCode "${{ steps.meta.outputs.native_code }}" \
-            --bundleUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/v${{ steps.meta.outputs.web_version }}/${ZIP_NAME}" \
-            --apkUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/v${{ steps.meta.outputs.web_version }}/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk" \
+            --bundleUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/${MANIFEST_TAG}/${ZIP_NAME}" \
+            --apkUrl "https://github.com/alwaysrajshinde/PocketNook/releases/download/${MANIFEST_TAG}/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk" \
             --notes "${{ inputs.release_notes }}" \
             --out "ota-artifacts/update-manifest.json"
           node --input-type=module -e '
@@ -175,9 +193,18 @@ jobs:
           APK_ARTIFACT="apk-artifacts/PocketNook-v${{ steps.meta.outputs.web_version }}-release.apk"
           cp "$APK_OUT" "$APK_ARTIFACT"
           echo "=== APK Metadata (Package ID, Version Code, Version Name) ==="
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK_ARTIFACT" | head -n 5 || true
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK_ARTIFACT" | head -n 5
           echo "=== Embedded OTA Manifest URL inside APK ==="
-          unzip -p "$APK_ARTIFACT" "assets/public/assets/*.js" | grep -aoE "https://raw\.githubusercontent\.com/[^\"']+/update-manifest\.json" | sort -u || true
+          APK_URLS=$(unzip -p "$APK_ARTIFACT" "assets/public/assets/*.js" | grep -aoE "https://raw\.githubusercontent\.com/[^\"']+/update-manifest\.json" | sort -u || true)
+          echo "$APK_URLS"
+          if ! echo "$APK_URLS" | grep -q "ota-manifest-test/update-manifest.json"; then
+            echo "ERROR: Built APK does NOT contain test manifest URL!"
+            exit 1
+          fi
+          if echo "$APK_URLS" | grep -q "/ota-manifest/update-manifest.json"; then
+            echo "ERROR: Built APK still contains production manifest URL!"
+            exit 1
+          fi
           echo "=== Release APK Certificate Fingerprints (Register SHA-1 in Firebase Console) ==="
           keytool -printcert -jarfile "$APK_ARTIFACT" | grep -E "SHA1|SHA256" || true
 

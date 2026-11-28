@@ -17,7 +17,11 @@ import { Browser } from '@capacitor/browser';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { APP_VERSION } from '../constants/version.js';
 
-export const DEFAULT_MANIFEST_URL = 'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json';
+// Direct static-analyzable expression so Vite inlines VITE_UPDATE_MANIFEST_URL & dead-code-eliminates fallback,
+// while pure Node ESM unit tests short-circuit cleanly when import.meta.env is undefined.
+export const DEFAULT_MANIFEST_URL =
+  (typeof import.meta.env === 'object' && import.meta.env.VITE_UPDATE_MANIFEST_URL) ||
+  'https://raw.githubusercontent.com/alwaysrajshinde/PocketNook/ota-manifest/update-manifest.json';
 
 // 15-minute cooldown between automatic foreground resume checks
 export const AUTO_UPDATE_COOLDOWN_MS = 15 * 60 * 1000;
@@ -33,7 +37,7 @@ export const DEFAULT_PUBLIC_KEY_JWK = {
 
 export const EMBEDDED_PUBLIC_KEY_JWK = (() => {
   try {
-    const raw = import.meta.env?.VITE_UPDATE_PUBLIC_KEY_JWK;
+    const raw = typeof import.meta.env === 'object' && import.meta.env.VITE_UPDATE_PUBLIC_KEY_JWK;
     return raw ? JSON.parse(raw) : DEFAULT_PUBLIC_KEY_JWK;
   } catch {
     return DEFAULT_PUBLIC_KEY_JWK;
@@ -350,7 +354,7 @@ export async function checkForAppUpdates(options = {}) {
 }
 
 async function runCheckForAppUpdates({
-  manifestUrl = import.meta.env?.VITE_UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL,
+  manifestUrl = DEFAULT_MANIFEST_URL,
   allowUntrustedTestOrigins = [],
   autoDownload = true,
   applyImmediately = false,
