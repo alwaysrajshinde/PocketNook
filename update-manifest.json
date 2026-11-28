@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "webVersion": "2.4.7",
+  "minNativeVersionCode": 1,
+  "nativeVersionCode": 9,
+  "bundleUrl": "https://github.com/alwaysrajshinde/PocketNook/releases/download/v2.4.7-ota-test/pocketnook-web-v2.4.7.zip",
+  "sha256": "b39fd31a29478151e438ae77453d67d6b3f3b88decfa4a5cf43d170a478e0b98",
+  "sizeBytes": 950316,
+  "apkUrl": "https://github.com/alwaysrajshinde/PocketNook/releases/download/v2.4.7-ota-test/PocketNook-v2.4.7-release.apk",
+  "releaseNotes": "Isolated OTA test bundle verification.",
+  "publishedAt": "2026-11-28T18:15:28.286Z",
+  "signatureAlgorithm": "ECDSA-P256-SHA256-P1363",
+  "signature": "m4cuAbCq1I+zHaN3koZae0P3J8K17VmvL15Fz//4ytJsLca6fkKmazjebpfg2U0B26pJyc9D0mLZdlrbUuDkrA=="
+}
